@@ -39,13 +39,14 @@ export function SafeAreaProvider({ children }: { children: React.ReactNode }) {
   ];
 
   const toggleSafeZone = (id: string) => {
-    // This would update the safe area config
-    console.log('Toggle safe zone:', id);
+    if (id === 'actionSafe') setSafeArea({ actionSafe: !safeArea.actionSafe });
+    else if (id === 'titleSafe') setSafeArea({ titleSafe: !safeArea.titleSafe });
+    else if (id === 'tiktokSafe') setSafeArea({ tiktokSafe: !safeArea.tiktokSafe });
   };
 
-  const setAspectRatio = (ratio: string) => {
-    // This would update the canvas aspect ratio
-    console.log('Set aspect ratio:', ratio);
+  const setAspectRatio = (ratio: SafeAreaConfig['aspectRatio']) => {
+    setSafeArea({ aspectRatio: ratio });
+    setCanvasAspectRatio(ratio);
   };
 
   return (
@@ -82,13 +83,15 @@ export function SafeAreaProvider({ children }: { children: React.ReactNode }) {
               {presets.map((preset) => (
                 <button
                   key={preset.value}
-                  className={`p-2 rounded-lg text-sm font-medium transition-all ${
-                    '16:9' === '16:9' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                  className={`p-2 rounded-lg text-xs font-medium transition-all flex items-center justify-center gap-1 ${
+                    safeArea.aspectRatio === preset.value
+                      ? 'bg-primary text-primary-foreground'
+                      : 'hover:bg-accent'
                   }`}
-                  onClick={() => console.log('Set ratio:', preset.value)}
+                  onClick={() => setAspectRatio(preset.value)}
                 >
                   {preset.icon}
-                  <span className="ml-2">{preset.label}</span>
+                  <span>{preset.label}</span>
                 </button>
               ))}
             </div>
@@ -150,7 +153,7 @@ export function SafeAreaOverlay({
     border: '2px dashed',
     borderRadius: '4px',
     pointerEvents: 'none' as const,
-  };
+  })
 
   return (
     <div className="relative w-full h-full overflow-hidden" style={{ aspectRatio: `${width}/${height}` }}>

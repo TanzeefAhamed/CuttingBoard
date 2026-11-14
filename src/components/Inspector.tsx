@@ -1,44 +1,34 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { useStore } from '../store';
-import { 
-  ChevronDown, ChevronRight, 
-  SlidersHorizontal, Speaker, 
-  Zap, Move, RotateCw, 
-  Contrast, Palette, 
-  Clock, Scissors, 
-  Link, Unlink, 
-  Plus, Minus, Trash2,
-  Eye, EyeOff,
-  Lock, Unlock,
-  Copy, Paste,
-  ArrowUpDown, ArrowLeftRight,
-  Reset, Settings,
-  Keyframe, Keyframe as KeyframeIcon
+import {
+  ChevronDown,
+  Speaker,
+  Zap,
+  Move,
+  RotateCw,
+  Contrast,
+  Palette,
+  Clock,
+  Scissors,
+  Link,
+  Plus,
+  ArrowUpDown,
+  Settings,
+  Video,
+  Keyframe as KeyframeIcon,
 } from 'lucide-react';
-import { useStore } from '../store';
-import { 
-  TimePoint, TimeRange, Microseconds, µs, µsFromFrames, toSeconds, toFrames 
-} from '../core/timeline/types';
-import { Segment } from '../core/timeline/segment';
-import { Track } from '../core/timeline/track';
 
 interface InspectorProps {
   className?: string;
 }
 
-export function Inspector({ className = '' }) {
-  const { 
-    selectedSegment, 
-    setSelectedSegment,
-    tracks,
-    segments,
-    updateSegment,
-    selectedTrack,
-    setSelectedTrack,
-  } = useStore();
+type TabId = 'video' | 'audio' | 'speed' | 'animation' | 'color' | 'effects';
 
-  const [activeTab, setActiveTab] = useState<'video' | 'audio' | 'speed' | 'animation' | 'effects' | 'adjustments'>('video');
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+export function Inspector({ className = '' }: InspectorProps) {
+  const { tracks, segments, selectedSegment, selectedTrack } = useStore();
+
+  const [activeTab, setActiveTab] = useState<TabId>('video');
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({
     transform: true,
     compositing: true,
     speed: true,
@@ -47,45 +37,31 @@ export function Inspector({ className = '' }) {
     effects: true,
   });
 
-  const selectedSegmentId = useStore.getState().selectedSegment;
-  const segment = selectedSegmentId ? useStore.getState().segments.get(selectedSegmentId) : null;
-  const track = selectedSegmentId ? tracks.find(t => t.id === segment?.trackId) : null;
+  const segment = selectedSegment
+    ? (segments.get(selectedSegment) as any) ?? null
+    : null;
+  const track = segment ? tracks.find((t: any) => t.id === segment.trackId) : null;
 
-  const toggleSection = (section: string) => {
-    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
+  const toggleSection = (section: string) =>
+    setExpanded((prev) => ({ ...prev, [section]: !prev[section] }));
+
+  const handleNumberChange = (_field: string, _value: number) => {
+    /* wired to store command in a later milestone */
   };
 
-  const formatTime = (us: bigint | number): string => {
-    const us = typeof us === 'bigint' ? Number(us) : us;
-    const seconds = us / 1_000_000;
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const seconds = Math.floor(seconds % 60);
-    const frames = Math.floor((seconds % 1) * 30);
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${frames.toString().padStart(2, '0')}`;
-  };
-
-  const handleNumberChange = (field: string, value: number) => {
-    // Would update segment property
-    console.log('Change:', field, value);
-  };
-
-  const handleVectorChange = (field: string, value: { x: number; y: number }) => {
-    // Would update vector property
-    console.log('Change:', field, value);
-  };
+  const noop = () => {};
 
   if (!segment) {
     return (
-      <div className={`h-full flex flex-col ${className}`}>
-        <div className="flex-1 flex items-center justify-center text-muted-foreground">
+      <div className={`h-full flex flex-col bg-card ${className}`}>
+        <div className="flex-1 flex items-center justify-center text-muted-foreground p-6">
           <div className="text-center">
             <div className="w-16 h-16 mx-auto mb-4 bg-muted rounded-full flex items-center justify-center">
               <Settings className="w-8 h-8 text-muted-foreground/50" />
             </div>
             <h3 className="text-lg font-medium text-foreground mb-1">No Selection</h3>
             <p className="text-sm text-muted-foreground">
-              Select a clip on the timeline to view and edit its properties
+              Select a clip on the timeline to view and edit its properties.
             </p>
           </div>
         </div>
@@ -93,36 +69,37 @@ export function Inspector({ className = '' }) {
     );
   }
 
-  const segmentTrack = useMemo(() => tracks.find(t => t.id === segment.trackId), [tracks, segment.trackId]);
-  const isVideo = segmentTrack?.type === 'video';
-  const isAudio = segmentTrack?.type === 'audio';
+  const isVideo = track?.type === 'video';
+  const isAudio = track?.type === 'audio';
+
+  const tabs: Array<{ id: TabId; label: string; icon: React.ReactNode; enabled: boolean }> = [
+    { id: 'video', label: 'Video', icon: <Video className="w-4 h-4" />, enabled: isVideo },
+    { id: 'audio', label: 'Audio', icon: <Speaker className="w-4 h-4" />, enabled: isAudio },
+    { id: 'speed', label: 'Speed', icon: <Clock className="w-4 h-4" />, enabled: true },
+    { id: 'animation', label: 'Animation', icon: <Move className="w-4 h-4" />, enabled: true },
+    { id: 'color', label: 'Color', icon: <Palette className="w-4 h-4" />, enabled: true },
+    { id: 'effects', label: 'Effects', icon: <Zap className="w-4 h-4" />, enabled: true },
+  ];
 
   return (
     <div className={`h-full flex flex-col bg-card border-l border-border ${className}`}>
       {/* Tabs */}
-      <div className="border-b border-border">
-        <nav className="flex gap-1 px-2" role="tablist">
-          {([
-            { id: 'video', label: 'Video', icon: <Video className="w-4 h-4" />, enabled: isVideo },
-            { id: 'audio', label: 'Audio', icon: <Speaker className="w-4 h-4" />, enabled: isAudio },
-            { id: 'speed', label: 'Speed', icon: <Clock className="w-4 h-4" />, enabled: true },
-            { id: 'animation', label: 'Animation', icon: <Move className="w-4 h-4" />, enabled: true },
-            { id: 'color', label: 'Color', icon: <Palette className="w-4 h-4" />, enabled: isVideo },
-            { id: 'effects', label: 'Effects', icon: <Zap className="w-4 h-4" />, enabled: true },
-          ].map(tab => (
+      <div className="border-b border-border overflow-x-auto scrollbar-hide">
+        <nav className="flex gap-1 px-2 py-1" role="tablist">
+          {tabs.map((tab) => (
             <button
               key={tab.id}
               role="tab"
               aria-selected={activeTab === tab.id}
-              className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+              disabled={!tab.enabled}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap transition-colors ${
                 activeTab === tab.id
                   ? 'bg-primary text-primary-foreground'
                   : tab.enabled
                     ? 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-                    : 'text-muted-foreground/50 cursor-not-allowed'
+                    : 'text-muted-foreground/40 cursor-not-allowed'
               }`}
               onClick={() => tab.enabled && setActiveTab(tab.id)}
-              disabled={!tab.enabled}
             >
               {tab.icon}
               {tab.label}
@@ -132,341 +109,236 @@ export function Inspector({ className = '' }) {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {activeTab === 'video' && (
-          <InspectorSection title="Transform" icon={<Move className="w-4 h-4" />} expanded={expandedSections.transform} onToggle={() => toggleSection('transform')}>
-            <InspectorRow label="Position">
-              <VectorInput 
-                value={{ x: 0, y: 0 }} 
-                onChange={(v) => handleNumberChange('position', v)}
-                unit="px"
-              />
-            </InspectorRow>
-            <InspectorRow label="Scale">
-              <VectorInput 
-                value={{ x: 1, y: 1 }} 
-                onChange={(v) => handleVectorChange('scale', v)}
-                unit="%"
-                defaultValue={100}
-              />
-            </InspectorRow>
-            <InspectorRow label="Rotation">
-              <NumberInput 
-                value={0} 
-                onChange={(v) => handleNumberChange('rotation', v)}
-                unit="°"
-                step={1}
-                min={-360}
-                max={360}
-              />
-            </InspectorRow>
-            <InspectorRow label="Anchor">
-              <VectorInput 
-                value={{ x: 0.5, y: 0.5 }} 
-                onChange={(v) => handleVectorChange('anchor', v)}
-                unit=""
-                step={0.01}
-                min={0}
-                max={1}
-              />
-            </InspectorRow>
-            <InspectorRow label="Opacity">
-              <SliderInput 
-                value={1} 
-                onChange={(v) => handleNumberChange('opacity', v)}
-                min={0}
-                max={1}
-                step={0.01}
-              />
-            </InspectorRow>
-            <InspectorRow label="Blend Mode">
-              <SelectInput
-                value="normal"
-                options={[
-                  'normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten',
-                  'color-dodge', 'color-burn', 'hard-light', 'soft-light',
-                  'difference', 'exclusion', 'hue', 'saturation', 'color', 'luminosity'
-                ]}
-                onChange={(v) => handleNumberChange('blendMode', v)}
-              />
-            </InspectorRow>
-          </InspectorSection>
+          <>
+            <Section
+              title="Transform"
+              icon={<Move className="w-4 h-4" />}
+              expanded={expanded.transform}
+              onToggle={() => toggleSection('transform')}
+            >
+              <Row label="Position">
+                <VectorInput value={{ x: 0, y: 0 }} onChange={noop} unit="px" />
+              </Row>
+              <Row label="Scale">
+                <VectorInput value={{ x: 100, y: 100 }} onChange={noop} unit="%" step={1} />
+              </Row>
+              <Row label="Rotation">
+                <NumberInput value={0} onChange={noop} unit="°" min={-360} max={360} />
+              </Row>
+              <Row label="Anchor">
+                <VectorInput value={{ x: 0.5, y: 0.5 }} onChange={noop} step={0.01} />
+              </Row>
+              <Row label="Opacity">
+                <SliderInput value={100} onChange={noop} min={0} max={100} unit="%" />
+              </Row>
+              <Row label="Blend Mode">
+                <SelectInput
+                  value="normal"
+                  options={[
+                    'normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten',
+                    'color-dodge', 'color-burn', 'hard-light', 'soft-light',
+                    'difference', 'exclusion', 'hue', 'saturation', 'color', 'luminosity',
+                  ]}
+                  onChange={noop}
+                />
+              </Row>
+            </Section>
 
-          <InspectorSection title="Cropping" icon={<ScissorsIcon className="w-4 h-4" />} expanded={expandedSections.compositing} onToggle={() => toggleSection('compositing')}>
-            <InspectorRow label="Crop Top">
-              <SliderInput value={0} onChange={(v) => {}} min={0} max={1} step={0.01} />
-            </InspectorRow>
-            <InspectorRow label="Crop Bottom">
-              <SliderInput value={0} onChange={(v) => {}} min={0} max={1} step={0.01} />
-            </InspectorRow>
-            <InspectorRow label="Crop Left">
-              <SliderInput value={0} onChange={(v) => {}} min={0} max={1} step={0.01} />
-            </InspectorRow>
-            <InspectorRow label="Crop Right">
-              <SliderInput value={0} onChange={(v) => {}} min={0} max={1} step={0.01} />
-            </InspectorRow>
-          </InspectorSection>
+            <Section
+              title="Crop"
+              icon={<Scissors className="w-4 h-4" />}
+              expanded={expanded.compositing}
+              onToggle={() => toggleSection('compositing')}
+            >
+              <Row label="Top"><SliderInput value={0} onChange={noop} unit="%" /></Row>
+              <Row label="Bottom"><SliderInput value={0} onChange={noop} unit="%" /></Row>
+              <Row label="Left"><SliderInput value={0} onChange={noop} unit="%" /></Row>
+              <Row label="Right"><SliderInput value={0} onChange={noop} unit="%" /></Row>
+            </Section>
 
-          <InspectorSection title="Stabilization" icon={<RotateCw className="w-4 h-4" />} expanded={expandedSections.compositing} onToggle={() => toggleSection('compositing')}>
-            <InspectorRow label="Enable">
-              <Toggle value={false} onChange={(v) => {}} />
-            </InspectorRow>
-            <InspectorRow label="Strength">
-              <SliderInput value={50} onChange={(v) => {}} min={0} max={100} />
-            </InspectorRow>
-            <InspectorRow label="Smoothness">
-              <SliderInput value={50} onChange={(v) => {}} min={0} max={100} />
-            </InspectorRow>
-          </InspectorSection>
+            <Section
+              title="Stabilization"
+              icon={<RotateCw className="w-4 h-4" />}
+              expanded={expanded.compositing}
+              onToggle={() => toggleSection('compositing')}
+            >
+              <Row label="Enable"><Toggle value={false} onChange={noop} /></Row>
+              <Row label="Strength"><SliderInput value={50} onChange={noop} /></Row>
+              <Row label="Smoothness"><SliderInput value={50} onChange={noop} /></Row>
+            </Section>
+          </>
         )}
 
         {activeTab === 'audio' && (
-          <InspectorSection title="Volume" icon={<Speaker className="w-4 h-4" />} expanded={expandedSections.transform} onToggle={() => toggleSection('transform')}>
-            <InspectorRow label="Volume">
-              <SliderInput value={1} onChange={(v) => {}} min={0} max={2} step={0.01} />
-            </InspectorRow>
-            <InspectorRow label="Pan">
-              <SliderInput value={0} onChange={(v) => {}} min={-1} max={1} step={0.01} />
-            </InspectorRow>
-            <InspectorRow label="Fade In">
-              <NumberInput value={0} onChange={(v) => {}} unit="s" step={0.1} min={0} />
-            </InspectorRow>
-            <InspectorRow label="Fade Out">
-              <NumberInput value={0} onChange={(v) => {}} unit="s" step={0.1} min={0} />
-            </InspectorRow>
-            <InspectorRow label="EQ">
-              <SelectInput value="flat" options={['flat', 'bass boost', 'vocal', 'treble boost', 'custom']} onChange={(v) => {}} />
-            </InspectorRow>
-          </InspectorSection>
+          <>
+            <Section
+              title="Volume"
+              icon={<Speaker className="w-4 h-4" />}
+              expanded={expanded.transform}
+              onToggle={() => toggleSection('transform')}
+            >
+              <Row label="Volume"><SliderInput value={100} onChange={noop} min={0} max={200} unit="%" /></Row>
+              <Row label="Pan"><SliderInput value={0} onChange={noop} min={-100} max={100} /></Row>
+              <Row label="Fade In"><NumberInput value={0} onChange={noop} unit="s" step={0.1} min={0} /></Row>
+              <Row label="Fade Out"><NumberInput value={0} onChange={noop} unit="s" step={0.1} min={0} /></Row>
+            </Section>
 
-          <InspectorSection title="Effects" icon={<Zap className="w-4 h-4" />} expanded={expandedSections.effects} onToggle={() => toggleSection('effects')}>
-            <InspectorRow label="Noise Reduction">
-              <Toggle value={false} onChange={(v) => {}} />
-            </InspectorRow>
-            <InspectorRow label="Strength">
-              <SliderInput value={50} onChange={(v) => {}} min={0} max={100} />
-            </InspectorRow>
-            <InspectorRow label="Reverb">
-              <Toggle value={false} onChange={(v) => {}} />
-            </InspectorRow>
-            <InspectorRow label="Room Size">
-              <SliderInput value={50} onChange={(v) => {}} min={0} max={100} />
-            </InspectorRow>
-          </InspectorSection>
+            <Section
+              title="Audio Effects"
+              icon={<Zap className="w-4 h-4" />}
+              expanded={expanded.effects}
+              onToggle={() => toggleSection('effects')}
+            >
+              <Row label="Denoise"><Toggle value={false} onChange={noop} /></Row>
+              <Row label="Strength"><SliderInput value={50} onChange={noop} /></Row>
+              <Row label="Reverb"><Toggle value={false} onChange={noop} /></Row>
+              <Row label="Room Size"><SliderInput value={50} onChange={noop} /></Row>
+            </Section>
+          </>
         )}
 
         {activeTab === 'speed' && (
-          <InspectorSection title="Speed" icon={<Clock className="w-4 h-4" />} expanded={expandedSections.speed} onToggle={() => toggleSection('speed')}>
-            <InspectorRow label="Speed">
-              <SliderInput value={1} onChange={(v) => {}} min={0.01} max={100} step={0.01} />
-            </InspectorRow>
-            <InspectorRow label="Duration">
-              <NumberInput value={10} onChange={(v) => {}} unit="s" step={0.1} min={0.01} />
-            </InspectorRow>
-            <InspectorRow label="Reverse">
-              <Toggle value={false} onChange={(v) => {}} />
-            </InspectorRow>
-            <InspectorRow label="Pitch Correction">
-              <Toggle value={true} onChange={(v) => {}} />
-            </InspectorRow>
-            <InspectorRow label="Ripple Edit">
-              <Toggle value={true} onChange={(v) => {}} />
-            </InspectorRow>
-          </InspectorSection>
+          <>
+            <Section
+              title="Speed"
+              icon={<Clock className="w-4 h-4" />}
+              expanded={expanded.speed}
+              onToggle={() => toggleSection('speed')}
+            >
+              <Row label="Speed"><SliderInput value={100} onChange={noop} min={1} max={1000} unit="%" /></Row>
+              <Row label="Reverse"><Toggle value={false} onChange={noop} /></Row>
+              <Row label="Pitch Correction"><Toggle value={true} onChange={noop} /></Row>
+              <Row label="Ripple Edit"><Toggle value={true} onChange={noop} /></Row>
+            </Section>
 
-          <InspectorSection title="Ramping" icon={<ArrowUpDown className="w-4 h-4" />} expanded={expandedSections.speed} onToggle={() => toggleSection('speed')}>
-            <InspectorRow label="Ramp Up">
-              <NumberInput value={0} onChange={(v) => {}} unit="s" step={0.1} min={0} />
-            </InspectorRow>
-            <InspectorRow label="Ramp Down">
-              <NumberInput value={0} onChange={(v) => {}} unit="s" step={0.1} min={0} />
-            </InspectorRow>
-            <InspectorRow label="Curve">
-              <SelectInput value="linear" options={['linear', 'ease-in', 'ease-out', 'ease-in-out', 'custom']} onChange={(v) => {}} />
-            </InspectorRow>
-          </InspectorSection>
+            <Section
+              title="Ramping"
+              icon={<ArrowUpDown className="w-4 h-4" />}
+              expanded={expanded.speed}
+              onToggle={() => toggleSection('speed')}
+            >
+              <Row label="Ramp Up"><NumberInput value={0} onChange={noop} unit="s" step={0.1} min={0} /></Row>
+              <Row label="Ramp Down"><NumberInput value={0} onChange={noop} unit="s" step={0.1} min={0} /></Row>
+              <Row label="Curve">
+                <SelectInput
+                  value="linear"
+                  options={['linear', 'ease-in', 'ease-out', 'ease-in-out', 'custom']}
+                  onChange={noop}
+                />
+              </Row>
+            </Section>
+          </>
         )}
 
         {activeTab === 'animation' && (
-          <InspectorSection title="Keyframes" icon={<KeyframeIcon className="w-4 h-4" />} expanded={expandedSections.animation} onToggle={() => toggleSection('animation')}>
+          <Section
+            title="Keyframes"
+            icon={<KeyframeIcon className="w-4 h-4" />}
+            expanded={expanded.animation}
+            onToggle={() => toggleSection('animation')}
+          >
             <div className="space-y-3">
-              <div className="flex items-center gap-2 text-sm">
-                <KeyframeIcon className="w-4 h-4 text-primary" />
-                <span className="font-medium">Position</span>
-                <button className="ml-auto p-1 rounded hover:bg-accent" title="Add keyframe">
-                  <Plus className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                <div>X: 0px</div>
-                <div>Y: 0px</div>
-              </div>
-              <div className="pt-2 border-t border-border">
-                <div className="flex items-center gap-2 text-sm">
-                  <KeyframeIcon className="w-4 h-4 text-amber-500" />
-                  <span className="font-medium">Scale</span>
-                  <button className="ml-auto p-1 rounded hover:bg-accent" title="Add keyframe">
-                    <Plus className="w-4 h-4" />
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                  <div>X: 100%</div>
-                  <div>Y: 100%</div>
-                </div>
-                <div className="pt-2 border-t border-border">
+              {(['Position', 'Scale', 'Rotation', 'Opacity'] as const).map((prop, i) => (
+                <div key={prop} className="pb-2 border-b border-border last:border-0">
                   <div className="flex items-center gap-2 text-sm">
-                    <KeyframeIcon className="w-4 h-4 text-emerald-500" />
-                    <span className="font-medium">Rotation</span>
+                    <KeyframeIcon
+                      className={`w-4 h-4 ${['text-primary', 'text-amber-500', 'text-emerald-500', 'text-fuchsia-500'][i]}`}
+                    />
+                    <span className="font-medium">{prop}</span>
                     <button className="ml-auto p-1 rounded hover:bg-accent" title="Add keyframe">
                       <Plus className="w-4 h-4" />
                     </button>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                    <div>0°</div>
-                    <div>0°</div>
-                  </div>
                 </div>
-              </div>
+              ))}
+              <Row label="Default Easing">
+                <SelectInput
+                  value="ease-in-out"
+                  options={['linear', 'ease-in', 'ease-out', 'ease-in-out', 'custom']}
+                  onChange={noop}
+                />
+              </Row>
             </div>
-          </InspectorSection>
-
-          <InspectorSection title="Easing" icon={<ArrowUpDown className="w-4 h-4" />} expanded={expandedSections.animation} onToggle={() => toggleSection('animation')}>
-            <InspectorRow label="Default Easing">
-              <SelectInput value="ease-in-out" options={['linear', 'ease-in', 'ease-out', 'ease-in-out', 'ease-in-back', 'ease-out-back', 'ease-in-out-back', 'custom']} onChange={(v) => {}} />
-            </InspectorRow>
-            <InspectorRow label="Custom Curve">
-              <div className="w-full h-24 bg-muted rounded-lg border border-border relative">
-                <canvas className="w-full h-full" />
-              </div>
-            </InspectorRow>
-          </InspectorSection>
+          </Section>
         )}
 
         {activeTab === 'color' && (
-          <InspectorSection title="Lift / Gamma / Gain" icon={<Contrast className="w-4 h-4" />} expanded={expandedSections.color} onToggle={() => toggleSection('color')}>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-2">Lift (Shadows)</label>
-                <div className="grid grid-cols-4 gap-2">
-                  <ColorWheelInput label="Master" value="#ffffff" onChange={(c) => {}} />
-                  <ColorWheelInput label="R" value="#ff0000" onChange={(c) => {}} />
-                  <ColorWheelInput label="G" value="#00ff00" onChange={(c) => {}} />
-                  <ColorWheelInput label="B" value="#0000ff" onChange={(c) => {}} />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-2">Gamma (Midtones)</label>
-                <div className="grid grid-cols-4 gap-2">
-                  <ColorWheelInput label="Master" value="#ffffff" onChange={(c) => {}} />
-                  <ColorWheelInput label="R" value="#ff0000" onChange={(c) => {}} />
-                  <ColorWheelInput label="G" value="#00ff00" onChange={(c) => {}} />
-                  <ColorWheelInput label="B" value="#0000ff" onChange={(c) => {}} />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-2">Gain (Highlights)</label>
-                <div className="grid grid-cols-4 gap-2">
-                  <ColorWheelInput label="Master" value="#ffffff" onChange={(c) => {}} />
-                  <ColorWheelInput label="R" value="#ff0000" onChange={(c) => {}} />
-                  <ColorWheelInput label="G" value="#00ff00" onChange={(c) => {}} />
-                  <ColorWheelInput label="B" value="#0000ff" onChange={(c) => {}} />
-                </div>
-              </div>
-            </div>
-          </InspectorSection>
-
-          <InspectorSection title="HSL Selective" icon={<Palette className="w-4 h-4" />} expanded={expandedSections.color} onToggle={() => toggleSection('color')}>
-            <div className="space-y-2">
-              {['Red', 'Orange', 'Yellow', 'Green', 'Cyan', 'Blue', 'Purple', 'Magenta'].map((color) => (
-                <div key={color} className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded" style={{ backgroundColor: color.toLowerCase() }} />
-                  <div className="flex-1 flex items-center gap-2">
-                    <SliderInput label="H" value={0} onChange={(v) => {}} min={-180} max={180} step={1} />
-                    <SliderInput label="S" value={1} onChange={(v) => {}} min={0} max={2} step={0.01} />
-                    <SliderInput label="L" value={0} onChange={(v) => {}} min={-1} max={1} step={0.01} />
+          <>
+            <Section
+              title="Lift / Gamma / Gain"
+              icon={<Contrast className="w-4 h-4" />}
+              expanded={expanded.color}
+              onToggle={() => toggleSection('color')}
+            >
+              <div className="space-y-3">
+                {(['Lift (Shadows)', 'Gamma (Midtones)', 'Gain (Highlights)'] as const).map((label) => (
+                  <div key={label}>
+                    <div className="text-[10px] font-medium text-muted-foreground mb-1.5">{label}</div>
+                    <div className="grid grid-cols-4 gap-2">
+                      <ColorInput label="Master" value="#808080" onChange={noop} />
+                      <ColorInput label="R" value="#ff0000" onChange={noop} />
+                      <ColorInput label="G" value="#00ff00" onChange={noop} />
+                      <ColorInput label="B" value="#0000ff" onChange={noop} />
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          </InspectorSection>
+                ))}
+              </div>
+            </Section>
 
-          <InspectorSection title="Curves" icon={<Zap className="w-4 h-4" />} expanded={expandedSections.color} onToggle={() => toggleSection('color')}>
-            <div className="space-y-2">
-              <select className="w-full px-3 py-2 bg-input border border-border rounded-lg text-sm">
-                <option value="master">Master (Luma)</option>
-                <option value="red">Red</option>
-                <option value="green">Green</option>
-                <option value="blue">Blue</option>
-              </select>
-              <div className="w-full h-32 bg-muted rounded-lg border border-border relative">
-                <canvas className="w-full h-full" />
-              </div>
-            </div>
-          </InspectorSection>
-
-          <InspectorSection title="3D LUT" icon={<Link className="w-4 h-4" />} expanded={expandedSections.color} onToggle={() => toggleSection('color')}>
-            <div className="space-y-2">
+            <Section
+              title="3D LUT"
+              icon={<Link className="w-4 h-4" />}
+              expanded={expanded.color}
+              onToggle={() => toggleSection('color')}
+            >
               <div className="flex items-center gap-2">
-                <input type="file" accept=".cube" className="flex-1 text-sm" />
-                <button className="px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-sm">Load .cube</button>
+                <input type="file" accept=".cube" className="flex-1 text-xs" />
+                <button className="px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs">
+                  Load .cube
+                </button>
               </div>
-              <div className="flex items-center gap-2">
-                <input type="checkbox" id="lut-enabled" />
-                <label htmlFor="lut-enabled" className="text-sm">Enable LUT</label>
-              </div>
-              <InspectorRow label="Intensity">
-                <SliderInput value={1} onChange={(v) => {}} min={0} max={2} step={0.01} />
-              </InspectorRow>
-            </div>
-          </InspectorSection>
+              <Row label="Intensity">
+                <SliderInput value={100} onChange={noop} unit="%" />
+              </Row>
+            </Section>
+          </>
         )}
 
         {activeTab === 'effects' && (
           <>
-            <InspectorSection title="Blur" icon={<Zap className="w-4 h-4" />} expanded={expandedSections.effects} onToggle={() => toggleSection('effects')}>
-              <InspectorRow label="Type">
-                <SelectInput value="gaussian" options={['gaussian', 'directional', 'box', 'radial', 'zoom']} onChange={(v) => {}} />
-              </InspectorRow>
-              <InspectorRow label="Amount">
-                <SliderInput value={0} onChange={(v) => {}} min={0} max={100} step={0.1} />
-              </InspectorRow>
-            </InspectorSection>
+            <Section
+              title="Blur"
+              icon={<Zap className="w-4 h-4" />}
+              expanded={expanded.effects}
+              onToggle={() => toggleSection('effects')}
+            >
+              <Row label="Type">
+                <SelectInput
+                  value="gaussian"
+                  options={['gaussian', 'directional', 'box', 'radial', 'zoom']}
+                  onChange={noop}
+                />
+              </Row>
+              <Row label="Amount"><SliderInput value={0} onChange={noop} /></Row>
+            </Section>
 
-            <InspectorSection title="Distortion" icon={<Move className="w-4 h-4" />} expanded={expandedSections.effects} onToggle={() => toggleSection('effects')}>
-              <InspectorRow label="Type">
-                <SelectInput value="none" options={['none', 'rgb-split', 'glitch', 'prism', 'fisheye', 'pinch', 'twirl']} onChange={(v) => {}} />
-              </InspectorRow>
-              <InspectorRow label="Amount">
-                <SliderInput value={0} onChange={(v) => {}} min={0} max={100} step={1} />
-              </InspectorRow>
-            </InspectorSection>
-
-            <InspectorSection title="Stylize" icon={<Palette className="w-4 h-4" />} expanded={expandedSections.effects} onToggle={() => toggleSection('effects')}>
-              <InspectorRow label="Type">
-                <SelectInput value="none" options={['none', 'film-grain', 'halftone', 'posterize', 'solarize', 'threshold', 'noise']} onChange={(v) => {}} />
-              </InspectorRow>
-              <InspectorRow label="Amount">
-                <SliderInput value={0} onChange={(v) => {}} min={0} max={100} step={1} />
-              </InspectorRow>
-            </InspectorSection>
-
-            <InspectorSection title="Transitions" icon={<Link className="w-4 h-4" />} expanded={expandedSections.effects} onToggle={() => toggleSection('effects')}>
-              <div className="space-y-2">
-                <div className="grid grid-cols-3 gap-2 p-3 bg-muted rounded-lg">
-                  {['cross-dissolve', 'dip-to-black', 'slide', 'push', 'wipe', 'zoom', 'flash', 'glitch'].map((t) => (
-                    <button key={t} className="p-2 text-xs text-center rounded-lg hover:bg-accent transition-colors capitalize">
-                      {t.replace('-', ' ')}
-                    </button>
-                  ))}
-                </div>
-                <InspectorRow label="Duration">
-                  <NumberInput value={1} onChange={(v) => {}} unit="s" step={0.1} min={0.1} />
-                </InspectorRow>
-                <InspectorRow label="Alignment">
-                  <SelectInput value="center" options={['center', 'start', 'end']} onChange={(v) => {}} />
-                </InspectorRow>
-              </div>
-            </InspectorSection>
+            <Section
+              title="Stylize"
+              icon={<Palette className="w-4 h-4" />}
+              expanded={expanded.effects}
+              onToggle={() => toggleSection('effects')}
+            >
+              <Row label="Type">
+                <SelectInput
+                  value="none"
+                  options={['none', 'rgb-split', 'glitch', 'prism', 'film-grain', 'halftone']}
+                  onChange={noop}
+                />
+              </Row>
+              <Row label="Amount"><SliderInput value={0} onChange={noop} /></Row>
+            </Section>
           </>
         )}
       </div>
@@ -474,45 +346,60 @@ export function Inspector({ className = '' }) {
   );
 }
 
-// Helper Components
-function InspectorSection({ 
-  title, icon, children, expanded, onToggle 
-}: { 
-  title: string; 
-  icon: React.ReactNode; 
-  children: React.ReactNode; 
-  expanded: boolean; 
+/* ------------------------------------------------------------------ helpers */
+
+function Section({
+  title,
+  icon,
+  children,
+  expanded,
+  onToggle,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+  expanded: boolean;
   onToggle: () => void;
 }) {
   return (
     <div className="bg-muted/30 rounded-lg border border-border overflow-hidden">
-      <button 
+      <button
         onClick={onToggle}
-        className="w-full flex items-center gap-2 px-4 py-3 text-left font-medium text-foreground hover:bg-muted/50 transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm font-medium text-foreground hover:bg-muted/50 transition-colors"
       >
         {icon}
         <span className="flex-1">{title}</span>
         <ChevronDown className={`w-4 h-4 transition-transform ${expanded ? 'rotate-180' : ''}`} />
       </button>
-      {expanded && (
-        <div className="px-4 pb-4 border-t border-border animate-slide-in">
-          {children}
-        </div>
-      )}
+      {expanded && <div className="px-3 pb-3 pt-1 border-t border-border space-y-1">{children}</div>}
     </div>
   );
 }
 
-function InspectorRow({ label, children }: { label: string; children: React.ReactNode }) {
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-3 py-2">
-      <label className="w-28 text-xs font-medium text-muted-foreground">{label}</label>
-      <div className="flex-1">{children}</div>
+    <div className="flex items-center gap-2 py-1.5">
+      <span className="w-24 flex-shrink-0 text-[11px] font-medium text-muted-foreground">{label}</span>
+      <div className="flex-1 min-w-0">{children}</div>
     </div>
   );
 }
 
-function SliderInput({ value, onChange, min = 0, max = 100, step = 1, unit = '' }) {
+function SliderInput({
+  value,
+  onChange,
+  min = 0,
+  max = 100,
+  step = 1,
+  unit = '',
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+  unit?: string;
+}) {
   return (
     <div className="flex items-center gap-2 flex-1">
       <input
@@ -522,16 +409,31 @@ function SliderInput({ value, onChange, min = 0, max = 100, step = 1, unit = '' 
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="flex-1 h-2 bg-muted rounded-full appearance-none accent-primary"
+        className="flex-1 h-1.5 accent-primary"
       />
-      <span className="w-12 text-xs text-muted-foreground font-mono text-right">
-        {value}{''}
+      <span className="w-12 text-[10px] text-muted-foreground font-mono text-right">
+        {value}
+        {unit}
       </span>
     </div>
   );
 }
 
-function NumberInput({ value, onChange, min, max, step = 1, unit = '' }) {
+function NumberInput({
+  value,
+  onChange,
+  min,
+  max,
+  step = 1,
+  unit = '',
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+  unit?: string;
+}) {
   return (
     <div className="flex items-center gap-1">
       <input
@@ -541,115 +443,107 @@ function NumberInput({ value, onChange, min, max, step = 1, unit = '' }) {
         min={min}
         max={max}
         step={step}
-        className="w-20 px-2 py-1.5 text-sm bg-input border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        className="w-20 px-2 py-1 text-xs bg-input border border-border rounded-md"
       />
-      {unit && <span className="text-xs text-muted-foreground">{unit}</span>}
+      {unit && <span className="text-[10px] text-muted-foreground">{unit}</span>}
     </div>
   );
 }
 
-function SelectInput({ value, options, onChange }) {
+function SelectInput({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: string[];
+  onChange: (v: string) => void;
+}) {
   return (
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="px-3 py-1.5 bg-input border border-border rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring w-full max-w-xs"
+      className="w-full max-w-[180px] px-2 py-1 text-xs bg-input border border-border rounded-md capitalize"
     >
       {options.map((opt) => (
-        <option key={opt} value={opt}>{opt}</option>
+        <option key={opt} value={opt}>
+          {opt.replace(/-/g, ' ')}
+        </option>
       ))}
     </select>
   );
 }
 
-function Toggle({ value, onChange }) {
+function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
   return (
     <button
       onClick={() => onChange(!value)}
-      className={`relative w-10 h-6 rounded-full transition-colors ${
-        value ? 'bg-primary' : 'bg-muted'
-      }`}
       role="switch"
       aria-checked={value}
+      className={`relative w-9 h-5 rounded-full transition-colors ${
+        value ? 'bg-primary' : 'bg-muted-foreground/30'
+      }`}
     >
-      <span className={`absolute top-0.5 transition-transform ${
-        value ? 'translate-x-5' : 'translate-x-0.5'
-      } w-5 h-5 rounded-full bg-white shadow`} />
+      <span
+        className={`absolute top-0.5 transition-transform ${
+          value ? 'translate-x-[18px]' : 'translate-x-0.5'
+        } w-4 h-4 rounded-full bg-white shadow`}
+      />
     </button>
   );
 }
 
-function VectorInput({ value, onChange, unit = '', step = 0.01, min, max, defaultValue }) {
+function VectorInput({
+  value,
+  onChange,
+  unit = '',
+  step = 1,
+}: {
+  value: { x: number; y: number };
+  onChange: (v: { x: number; y: number }) => void;
+  unit?: string;
+  step?: number;
+}) {
   return (
     <div className="flex items-center gap-1 flex-1">
       <input
         type="number"
         value={value.x}
-        onChange={(e) => onChange({ ...value, x: Number(e.target.value) })}
-        min={min}
-        max={max}
         step={step}
-        className="w-1/2 px-2 py-1.5 text-sm bg-input border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        onChange={(e) => onChange({ ...value, x: Number(e.target.value) })}
+        className="w-full min-w-0 px-1.5 py-1 text-xs bg-input border border-border rounded-md"
       />
-      {unit && <span className="text-xs text-muted-foreground px-1">{unit}</span>}
       <input
         type="number"
         value={value.y}
-        onChange={(e) => onChange({ ...value, y: Number(e.target.value) })}
-        min={min}
-        max={max}
         step={step}
-        className="w-1/2 px-2 py-1.5 text-sm bg-input border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        onChange={(e) => onChange({ ...value, y: Number(e.target.value) })}
+        className="w-full min-w-0 px-1.5 py-1 text-xs bg-input border border-border rounded-md"
       />
-      {unit && <span className="text-xs text-muted-foreground">{unit}</span>}
+      {unit && <span className="text-[10px] text-muted-foreground flex-shrink-0">{unit}</span>}
     </div>
   );
 }
 
-function ColorWheelInput({ label, value, onChange }) {
+function ColorInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
   return (
-    <div className="flex flex-col items-center gap-1">
-      <label className="text-xs text-muted-foreground">{label}</label>
+    <div className="flex flex-col items-center gap-0.5">
       <input
         type="color"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-8 h-8 rounded border border-border cursor-pointer"
+        className="w-full h-7 rounded border border-border cursor-pointer"
+        title={label}
       />
+      <span className="text-[9px] text-muted-foreground">{label}</span>
     </div>
-  );
-}
-
-function Toggle({ value, onChange }) {
-  return (
-    <button
-      onClick={() => onChange(!value)}
-      className={`relative w-10 h-6 rounded-full transition-colors ${
-        value ? 'bg-primary' : 'bg-muted'
-      }`}
-      role="switch"
-      aria-checked={value}
-    >
-      <span className={`absolute top-0.5 transition-transform ${
-        value ? 'translate-x-5' : 'translate-x-0.5'
-      } w-5 h-5 rounded-full bg-white shadow`} />
-    </button>
-  );
-}
-
-function Toggle({ value, onChange }) {
-  return (
-    <button
-      onClick={() => onChange(!value)}
-      className={`relative w-10 h-6 rounded-full transition-colors ${
-        value ? 'bg-primary' : 'bg-muted'
-      }`}
-      role="switch"
-      aria-checked={value}
-    >
-      <span className={`absolute top-0.5 transition-transform ${
-        value ? 'translate-x-5' : 'translate-x-0.5'
-      } w-5 h-5 rounded-full bg-white shadow`} />
-    </button>
   );
 }

@@ -1,133 +1,111 @@
 import React from 'react';
 import { useStore } from '../store';
-import { 
-  Play, Pause, SkipBack, SkipForward, 
-  RotateCcw, RotateCw, Undo2, Redo2, 
-  Save, Download, Settings, HelpCircle,
-  ZoomIn, ZoomOut, Maximize2, Minimize2
+import {
+  Play,
+  Pause,
+  SkipBack,
+  SkipForward,
+  Undo2,
+  Redo2,
+  ZoomIn,
+  ZoomOut,
+  Save,
+  Download,
+  HelpCircle,
 } from 'lucide-react';
 
 export function Toolbar() {
-  const { 
-    isPlaying, setIsPlaying, 
-    playbackSpeed, setPlaybackSpeed,
-    zoom, setZoom,
-    undo, redo,
-    saveProject, loadProject,
-    exportProject,
-    zoom: currentZoom
+  const {
+    isPlaying,
+    setIsPlaying,
+    playhead,
+    setPlayhead,
+    zoom,
+    setZoom,
+    segments,
   } = useStore();
 
-  const handlePlayPause = () => {
-    // This would dispatch to the audio engine
-    console.log('Play/Pause toggled');
+  const handlePlayPause = () => setIsPlaying(!isPlaying);
+
+  const stepFrame = (dir: 1 | -1) => {
+    // 1 frame @ 30fps = 33333µs
+    setPlayhead(playhead + BigInt(dir) * BigInt(33_333));
   };
 
-  const handleUndo = () => {
-    // Implement undo
-    console.log('Undo');
+  const handleSkipBack = () => {
+    // Jump to previous clip boundary or 1s back
+    setPlayhead(playhead > BigInt(1_000_000) ? playhead - BigInt(1_000_000) : BigInt(0));
   };
 
-  const handleRedo = () => {
-    // Implement redo
-    console.log('Redo');
-  };
-
-  const handleSave = () => {
-    // Save project
-    console.log('Save project');
-  };
-
-  const handleExport = () => {
-    // Open export dialog
-    console.log('Export project');
-  };
+  const handleSkipForward = () => setPlayhead(playhead + BigInt(1_000_000));
 
   return (
-    <div className="flex items-center gap-4 px-4 py-2 border-b border-border bg-background/80 backdrop-blur-sm sticky top-0 z-50">
-      {/* Left - Transport Controls */}
-      <div className="flex items-center gap-1">
+    <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-card sticky top-0 z-50">
+      {/* Undo / Redo */}
+      <div className="flex items-center gap-0.5">
         <button
-          className="p-2 rounded-lg hover:bg-accent transition-colors"
-          onClick={handleUndo}
+          className="p-1.5 rounded-md hover:bg-accent transition-colors text-muted-foreground"
           title="Undo (Ctrl+Z)"
-          disabled
-        >
-          <RotateCcw className="w-4 h-4" />
-        </button>
-        <button
-          className="p-2 rounded-lg hover:bg-accent transition-colors"
-          onClick={handleRedo}
-          title="Redo (Ctrl+Shift+Z)"
-          disabled
-        >
-          <RotateCw className="w-4 h-4" />
-        </button>
-      </div>
-
-      <div className="w-px h-6 bg-border mx-2" />
-
-      <div className="flex items-center gap-1">
-        <button
-          className="p-2 rounded-lg hover:bg-accent transition-colors"
-          onClick={() => {}}
-          title="Skip Back (J)"
-        >
-          <SkipBack className="w-4 h-4" />
-        </button>
-        <button
-          className={`p-2 rounded-lg transition-colors ${isPlaying ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}
-          onClick={() => {}}
-          title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
-        >
-          {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-        </button>
-        <button
-          className="p-2 rounded-lg hover:bg-accent transition-colors"
-          onClick={() => {}}
-          title="Skip Forward (L)"
-        >
-          <SkipForward className="w-4 h-4" />
-        </button>
-      </div>
-
-      <div className="w-px h-6 bg-border mx-2" />
-
-      <div className="flex items-center gap-1">
-        <button
-          className="p-2 rounded-lg hover:bg-accent transition-colors"
-          onClick={handleUndo}
-          title="Undo (Ctrl+Z)"
+          onClick={() => console.log('Undo')}
         >
           <Undo2 className="w-4 h-4" />
         </button>
         <button
-          className="p-2 rounded-lg hover:bg-accent transition-colors"
-          onClick={() => {}}
+          className="p-1.5 rounded-md hover:bg-accent transition-colors text-muted-foreground"
           title="Redo (Ctrl+Shift+Z)"
+          onClick={() => console.log('Redo')}
         >
           <Redo2 className="w-4 h-4" />
         </button>
       </div>
 
-      <div className="w-px h-6 bg-border mx-2" />
+      <div className="w-px h-5 bg-border" />
 
-      {/* Zoom Controls */}
-      <div className="flex items-center gap-1">
+      {/* Transport */}
+      <div className="flex items-center gap-0.5">
         <button
-          className="p-2 rounded-lg hover:bg-accent transition-colors"
-          onClick={() => {}}
-          title="Zoom Out (-)"
+          className="p-1.5 rounded-md hover:bg-accent transition-colors"
+          title="Skip Back (J)"
+          onClick={handleSkipBack}
+        >
+          <SkipBack className="w-4 h-4" />
+        </button>
+        <button
+          className={`p-1.5 rounded-md transition-colors ${
+            isPlaying ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+          }`}
+          title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
+          onClick={handlePlayPause}
+        >
+          {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+        </button>
+        <button
+          className="p-1.5 rounded-md hover:bg-accent transition-colors"
+          title="Step forward"
+          onClick={() => stepFrame(1)}
+        >
+          <SkipForward className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="w-px h-5 bg-border" />
+
+      {/* Zoom */}
+      <div className="flex items-center gap-0.5">
+        <button
+          className="p-1.5 rounded-md hover:bg-accent transition-colors"
+          title="Zoom Out"
+          onClick={() => setZoom(zoom * 0.8)}
         >
           <ZoomOut className="w-4 h-4" />
         </button>
-        <span className="px-2 text-sm text-muted-foreground font-mono">
-          {Math.round(100 * 100)}%
+        <span className="px-1 text-[11px] text-muted-foreground font-mono w-12 text-center">
+          {Math.round(zoom * 100)}%
         </span>
         <button
-          className="p-2 rounded-lg hover:bg-accent transition-colors"
-          onClick={() => {}}
-          title="Zoom In (+)"
+          className="p-1.5 rounded-md hover:bg-accent transition-colors"
+          title="Zoom In"
+          onClick={() => setZoom(zoom * 1.25)}
         >
           <ZoomIn className="w-4 h-4" />
         </button>
@@ -135,19 +113,26 @@ export function Toolbar() {
 
       <div className="flex-1" />
 
-      {/* Right - Window Controls */}
-      <div className="flex items-center gap-1">
+      {/* Project actions */}
+      <div className="flex items-center gap-0.5">
         <button
-          className="p-2 rounded-lg hover:bg-accent transition-colors"
-          onClick={() => {}}
-          title="Settings (Ctrl+,)"
+          className="p-1.5 rounded-md hover:bg-accent transition-colors"
+          title="Save project (Ctrl+S)"
+          onClick={() => console.log('Save project')}
         >
-          <Settings className="w-4 h-4" />
+          <Save className="w-4 h-4" />
         </button>
         <button
-          className="p-2 rounded-lg hover:bg-accent transition-colors"
-          onClick={() => {}}
+          className="p-1.5 rounded-md hover:bg-accent transition-colors"
+          title="Export (Ctrl+E)"
+          onClick={() => console.log('Export project')}
+        >
+          <Download className="w-4 h-4" />
+        </button>
+        <button
+          className="p-1.5 rounded-md hover:bg-accent transition-colors"
           title="Help (F1)"
+          onClick={() => console.log('Help')}
         >
           <HelpCircle className="w-4 h-4" />
         </button>

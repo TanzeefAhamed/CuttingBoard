@@ -1,41 +1,34 @@
-import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useStore } from '../store';
-import { 
-  ChevronLeft, ChevronRight, ChevronUp, ChevronDown,
-  Plus, Minus, Scissors, MousePointer, 
-  Volume2, VolumeX, Scissors, 
-  ZoomIn, ZoomOut, Maximize2, Minimize2,
-  Move, Trash2, Copy, Link
+import {
+  Volume2, VolumeX, Trash2, Scissors, ZoomIn, ZoomOut,
 } from 'lucide-react';
-import { TimePoint, TimeRange, Microseconds, µs, µsFromFrames, toSeconds, toFrames } from '../core/timeline/types';
-import { Segment, Track, TrackType } from '../core/timeline/segment';
-import { Timeline as TimelineType } from '../core/timeline/timeline';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import { useStore } from '../store';
-import { 
-  ChevronLeft, ChevronRight, ChevronUp, ChevronDown,
-  Plus, Minus, Scissors, MousePointer, 
-  Volume2, VolumeX, 
-  ZoomIn, ZoomOut, Maximize2, Minimize2,
-  Move, Trash2, Copy, Link, Scissors as ScissorsIcon
-} from 'lucide-react';
-
-interface TimelineProps {
-  className?: string;
-}
 
 const TRACK_HEIGHT = 80;
-const MIN_CLIP_WIDTH = 40;
-const SNAP_THRESHOLD = 10; // pixels
+const RULER_HEIGHT = 36;
+const MIN_CLIP_WIDTH = 24;
 
-interface TrackRenderData {
-  track: any;
-  segments: any[];
-  y: number;
-  height: number;
+/** zoom = 1 -> 100 px per second */
+const pixelsPerSecond = (zoom: number) => 100 * (zoom || 1);
+const usToPx = (us: number | bigint, zoom: number) =>
+  (Number(us) / 1_000_000) * pixelsPerSecond(zoom);
+const pxToUs = (px: number, zoom: number) =>
+  BigInt(Math.round((px / pixelsPerSecond(zoom)) * 1_000_000));
+
+function formatTimecode(us: number | bigint): string {
+  const totalSeconds = Number(us) / 1_000_000;
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = Math.floor(totalSeconds % 60);
+  const frames = Math.floor((totalSeconds % 1) * 30);
+  return `${hours.toString().padStart(2, '0')}:${minutes
+    .toString()
+    .padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${frames
+    .toString()
+    .padStart(2, '0')}`;
 }
 
-export function Timeline({ className = '' }) {
+export function Timeline({ className = '' }: { className?: string }) {
   const {
     tracks,
     segments,
@@ -45,496 +38,367 @@ export function Timeline({ className = '' }) {
     setIsPlaying,
     zoom,
     setZoom,
-    scrollX,
-    setScrollX,
-    playhead: currentPlayhead,
-    duration,
     inPoint,
     outPoint,
-    addTrack,
-    removeTrack,
-    moveSegment,
-    trimSegment,
+    removeSegment,
     splitSegment,
-    addTrack: addTrackAction,
-    splitSegment: splitSegmentAction,
-    trimSegment: trimSegmentAction,
   } = useStore();
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rulerRef = useRef<HTMLDivElement>(null);
-  const tracksContainerRef = useRef<HTMLDivElement>(null);
-  const [isPlaying, setIsPlayingLocal] = useState(false);
-  const [hoveredSegment, setHoveredSegment] = useState<string | null>(null);
-  const [draggedSegment, setDraggedSegment] = useState<{ segmentId: string; startX: number; startTime: any } | null>(null);
-  const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false);
-  const [showRuler, setShowRuler] = useState(true);
-
-  const tracksData = useStore.getState().tracks;
-  const segmentsData = useStore.getState().segments;
-  const playhead = useStore.getState().playhead;
-  const zoom = useStore.getState().zoom;
-  const scrollX = useStore.getState().scrollX;
-  const inPoint = useStore.getState().inPoint;
-  const outPoint = useStore.getState().outPoint;
-
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const rulerCanvasRef = useRef<HTMLCanvasElement>(null);
-  const tracksContainerRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [hoveredSegment, setHoveredSegment] = useState<string | null>(null);
+  const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false);
 
-  // Virtualize tracks for performance
-  const trackVirtualizer = useVirtualizer({
-    count: 100, // Max tracks
-    getScrollElement: () => tracksContainerRef.current,
-    estimateSize: () => TRACK_HEIGHT,
-    overscan: 5,
-  });
+  // How much timeline width the visible viewport represents
+  const getViewportWidth = () => scrollRef.current?.clientWidth ?? 800;
+  const timelineWidth = () => Math.max(getViewportWidth() + 400, usToPx(30_000_000, zoom));
 
-  const TRACK_HEIGHT = 80;
-  const RULER_HEIGHT = 40;
-  const MIN_CLIP_WIDTH = 40;
-
-  const pixelsPerMicrosecond = zoom;
-  const microsecondsPerPixel = 1 / zoom;
-
-  const formatTime = (us: bigint | number): string => {
-    const us = typeof us === 'bigint' ? Number(us) : us;
-    const seconds = us / 1_000_000;
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const seconds = Math.floor(seconds % 60);
-    const frames = Math.floor((seconds % 1) * 30);
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${frames.toString().padStart(2, '0')}`;
-  };
-
-  const microsecondsToPixels = (us: bigint | number): number => {
-    const us = typeof us === 'bigint' ? Number(us) : us;
-    return us * pixelsPerMicrosecond;
-  };
-
-  const pixelsToMicroseconds = (px: number): bigint => {
-    return BigInt(Math.round(px / pixelsPerMicrosecond));
-  };
-
-  const formatTimecode = (us: bigint | number) => {
-    const us = typeof us === 'bigint' ? Number(us) : us;
-    return formatTime(us);
-  };
-
-  // Render ruler
-  const drawRuler = useCallback(() => {
-    const canvas = rulerCanvasRef.current;
+  // ---------------------------------------------------------------- drawing
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
     if (!canvas) return;
-
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const width = canvas.width = canvas.parentElement?.clientWidth || 800;
-    canvas.height = RULER_HEIGHT;
-
-    ctx.clearRect(0, 0, width, RULER_HEIGHT);
-    ctx.fillStyle = '#1a1a1a';
-    ctx.fillRect(0, 0, width, RULER_HEIGHT);
-
-    // Draw time markers
-    const startTime = scrollX;
-    const endTime = scrollX + (width / zoom);
-    
-    // Calculate tick interval based on zoom
-    let tickInterval = 1_000_000; // 1 second
-    if (zoom > 100) tickInterval = 100_000; // 100ms
-    else if (zoom > 10) tickInterval = 500_000; // 500ms
-    else if (zoom > 1) tickInterval = 1_000_000; // 1 second
-    else tickInterval = 5_000_000; // 5 seconds
-
-    const startTick = Math.ceil(Number(startTime) / tickInterval) * tickInterval;
-    
-    ctx.font = '11px "JetBrains Mono", monospace';
-    ctx.fillStyle = '#888';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-
-    for (let t = startTick; t < Number(endTime); t += tickInterval) {
-      const x = (t - Number(scrollX)) * pixelsPerMicrosecond;
-      if (x < 0 || x > width) continue;
-
-      const isMajor = tickInterval >= 1_000_000 && t % 5_000_000 === 0;
-      const tickHeight = isMajor ? 20 : 12;
-      
-      ctx.beginPath();
-      ctx.moveTo(x, RULER_HEIGHT - tickHeight);
-      ctx.lineTo(x, RULER_HEIGHT);
-      ctx.strokeStyle = isMajor ? '#666' : '#444';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      if (isMajor) {
-        ctx.fillText(formatTimecode(t), x, 14);
-      }
+    const width = timelineWidth();
+    const height = Math.max(TRACK_HEIGHT * Math.max(tracks.length, 1), 120);
+    const dpr = window.devicePixelRatio || 1;
+    if (canvas.width !== width * dpr || canvas.height !== height * dpr) {
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
     }
-  }, [zoom, scrollX]);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
 
-  // Draw playhead
-  const drawPlayhead = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const playheadX = microsecondsToPixels(playhead);
-    
-    ctx.save();
-    ctx.strokeStyle = '#ff4444';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([5, 5]);
-    ctx.beginPath();
-    ctx.moveTo(playheadX, 0);
-    ctx.lineTo(playheadX, canvas.height);
-    ctx.stroke();
-    ctx.restore();
-
-    // Playhead triangle at top
-    ctx.fillStyle = '#ff4444';
-    ctx.beginPath();
-    ctx.moveTo(playheadX - 6, 0);
-    ctx.lineTo(playheadX + 6, 0);
-    ctx.lineTo(playheadX, 10);
-    ctx.closePath();
-    ctx.fill();
-  }, [playhead]);
-
-  // Render segments
-  const renderSegments = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Draw track backgrounds
-    tracksData.forEach((track, trackIndex) => {
-      const y = trackIndex * TRACK_HEIGHT;
-      
-      // Track background
-      ctx.fillStyle = track.type === 'video' ? '#1e1e1e' : 
-                        track.type === 'audio' ? '#1a1a2e' : '#1e2e1e';
-      ctx.fillRect(0, y, canvas.width, TRACK_HEIGHT);
-      
-      // Track separator
-      ctx.strokeStyle = '#333';
+    // Track lanes
+    tracks.forEach((track: any, index: number) => {
+      const y = index * TRACK_HEIGHT;
+      ctx.fillStyle =
+        track.type === 'video' ? '#1e293b' : track.type === 'audio' ? '#1e1b2e' : '#16241b';
+      ctx.fillRect(0, y, width, TRACK_HEIGHT - 1);
+      ctx.strokeStyle = '#334155';
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(0, y + TRACK_HEIGHT);
-      ctx.lineTo(canvas.width, y + TRACK_HEIGHT);
+      ctx.moveTo(0, y + TRACK_HEIGHT - 0.5);
+      ctx.lineTo(width, y + TRACK_HEIGHT - 0.5);
       ctx.stroke();
     });
 
-    // Draw segments
-    segmentsData.forEach((segment, segmentId) => {
-      const track = tracksData.find(t => t.id === segment.trackId);
-      if (!track) return;
-
-      const trackIndex = tracksData.findIndex(t => t.id === segment.trackId);
-      if (trackIndex === -1) return;
+    // Segments
+    const segmentList = Array.from(segments.values()) as any[];
+    for (const segment of segmentList) {
+      const trackIndex = tracks.findIndex((t: any) => t.id === segment.trackId);
+      if (trackIndex === -1) continue;
 
       const y = trackIndex * TRACK_HEIGHT;
-      const x = microsecondsToPixels(segment.targetTimerange.start);
-      const width = Math.max(MIN_CLIP_WIDTH, microsecondsToPixels(segment.targetTimerange.duration));
-      
-      // Segment background
-      const isHovered = hoveredSegment === segmentId;
-      const isSelected = false; // Would track selection state
-      
-      ctx.fillStyle = isHovered ? '#3b82f6' : 
-                      track.type === 'video' ? '#3b82f6' : 
-                      track.type === 'audio' ? '#f59e0b' : '#22c55e';
-      
-      if (isSelected) {
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 2;
-      }
+      const x = usToPx(segment.targetTimerange.start, zoom);
+      const w = Math.max(MIN_CLIP_WIDTH, usToPx(segment.targetTimerange.duration, zoom));
+      if (x + w < 0 || x > width) continue;
 
-      const radius = 4;
-      const x = Math.max(0, x);
-      const w = Math.min(width, x + width - x);
-      
+      const isHovered = hoveredSegment === segment.id;
+      ctx.fillStyle = isHovered
+        ? '#60a5fa'
+        : (trackIndex % 3 === 0 ? '#3b82f6' : trackIndex % 3 === 1 ? '#f59e0b' : '#22c55e');
+
       ctx.beginPath();
-      ctx.roundRect(x, y + 4, w, TRACK_HEIGHT - 8, 4);
+      const r = 4;
+      const top = y + 6;
+      const h = TRACK_HEIGHT - 14;
+      ctx.roundRect(x, top, w, h, r);
       ctx.fill();
-      if (isSelected) ctx.stroke();
 
-      // Segment label
-      ctx.fillStyle = '#fff';
+      // Label
+      ctx.fillStyle = '#f8fafc';
       ctx.font = '11px "JetBrains Mono", monospace';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      const label = segment.media?.metadata?.name || segment.id.slice(0, 8);
-      const textX = x + 8;
-      const textY = y + TRACK_HEIGHT / 2;
-      if (x + 8 + ctx.measureText(label).width < x + width - 8) {
-        ctx.fillText(label, textX, textY);
+      const label = segment.media?.metadata?.name || segment.media?.id || segment.id.slice(0, 8);
+      if (ctx.measureText(label).width < w - 16) {
+        ctx.fillText(label, x + 8, top + h / 2);
       }
 
-      // Trim handles
-      if (isHovered || isSelected) {
-        ctx.fillStyle = '#fff';
-        // Left handle
-        ctx.fillRect(x - 4, y + 4, 8, TRACK_HEIGHT - 8);
-        // Right handle
-        ctx.fillRect(x + width - 4, y + 4, 8, TRACK_HEIGHT - 8);
+      // Trim handles on hover
+      if (isHovered) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(x, top, 4, h);
+        ctx.fillRect(x + w - 4, top, 4, h);
       }
+    }
 
-      // Keyframe indicators
-      // Would draw keyframe diamonds here
-    });
-  }, [tracksData, segmentsData, zoom, scrollX, playhead, hoveredSegment]);
+    // Playhead
+    const px = usToPx(playhead, zoom);
+    ctx.strokeStyle = '#ef4444';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(px, 0);
+    ctx.lineTo(px, height);
+    ctx.stroke();
+    ctx.fillStyle = '#ef4444';
+    ctx.beginPath();
+    ctx.moveTo(px - 6, 0);
+    ctx.lineTo(px + 6, 0);
+    ctx.lineTo(px, 9);
+    ctx.closePath();
+    ctx.fill();
 
-  // Render loop
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const render = () => {
-      renderSegments();
-      drawPlayhead();
-      
-      requestAnimationFrame(render);
+    // In / Out markers
+    const drawMarker = (us: number | bigint, color: string) => {
+      const mx = usToPx(us, zoom);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(mx, 0);
+      ctx.lineTo(mx, height);
+      ctx.stroke();
+      ctx.setLineDash([]);
     };
-    
-    const animationFrameId = requestAnimationFrame(render);
-    return () => cancelAnimationFrame(animationFrameId);
-  }, [renderSegments, drawPlayhead]);
+    if (inPoint) drawMarker(inPoint, '#22c55e');
+    if (outPoint) drawMarker(outPoint, '#f97316');
+  }, [tracks, segments, playhead, zoom, hoveredSegment, inPoint, outPoint]);
 
-  // Ruler render
-  useEffect(() => {
+  // ------------------------------------------------------------------ ruler
+  const drawRuler = useCallback(() => {
     const canvas = rulerCanvasRef.current;
     if (!canvas) return;
-    drawRuler();
-  }, [drawRuler]);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
-  // Handle canvas click
-  const handleCanvasClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    const rect = canvasRef.current!.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const time = pixelsToMicroseconds(x);
-    
-    setPlayhead(pixelsToMicroseconds(e.nativeEvent.offsetX));
+    const width = timelineWidth();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = width * dpr;
+    canvas.height = RULER_HEIGHT * dpr;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${RULER_HEIGHT}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, width, RULER_HEIGHT);
+
+    // Choose a tick interval that keeps labels readable
+    const pxPerSec = pixelsPerSecond(zoom);
+    let tickSeconds = 5;
+    if (pxPerSec > 400) tickSeconds = 0.5;
+    else if (pxPerSec > 150) tickSeconds = 1;
+    else if (pxPerSec > 60) tickSeconds = 2;
+    else if (pxPerSec < 25) tickSeconds = 10;
+
+    const tickUs = tickSeconds * 1_000_000;
+    const startTick = Math.floor(0 / tickUs) * tickUs;
+
+    ctx.font = '10px "JetBrains Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+
+    for (let t = startTick; t * 1 <= (width / pxPerSec) * 1_000_000; t += tickUs) {
+      const x = usToPx(t, zoom);
+      if (x > width) break;
+      const isMajor = Math.round(t / tickUs) % 5 === 0;
+      ctx.strokeStyle = isMajor ? '#64748b' : '#475569';
+      ctx.beginPath();
+      ctx.moveTo(x, isMajor ? RULER_HEIGHT - 14 : RULER_HEIGHT - 8);
+      ctx.lineTo(x, RULER_HEIGHT);
+      ctx.stroke();
+      if (isMajor) {
+        ctx.fillStyle = '#94a3b8';
+        ctx.fillText(formatTimecode(t), x, 12);
+      }
+    }
+
+    // Playhead marker on ruler
+    const px = usToPx(playhead, zoom);
+    ctx.fillStyle = '#ef4444';
+    ctx.fillRect(px - 1, 0, 2, RULER_HEIGHT);
+  }, [zoom, playhead, tracks.length]);
+
+  // ------------------------------------------------------------- rAF render
+  useEffect(() => {
+    let raf = 0;
+    const loop = () => {
+      draw();
+      drawRuler();
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [draw, drawRuler]);
+
+  // ------------------------------------------------------------ interaction
+  const seekFromEvent = (clientX: number) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const x = clientX - rect.left + el.scrollLeft;
+    setPlayhead(pxToUs(Math.max(0, x), zoom));
+  };
+
+  const handleCanvasMouseDown = (e: React.MouseEvent) => {
     setIsDraggingPlayhead(true);
-  }, []);
-
-  const handleCanvasMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (isDraggingPlayhead) {
-      const rect = canvasRef.current!.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      setPlayhead(pixelsToMicroseconds(x));
-    }
-  }, [isDraggingPlayhead]);
-
-  const handleCanvasMouseUp = useCallback(() => {
-    setIsDraggingPlayhead(false);
-  }, []);
-
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    if (e.ctrlKey || e.metaKey) {
-      // Zoom
-      const delta = e.deltaY > 0 ? 0.9 : 1.1;
-      setZoom(Math.max(0.1, Math.min(100, zoom * delta)));
-    } else {
-      // Horizontal scroll
-      setScrollX(prev => prev + e.deltaY * 10);
-    }
-  }, [zoom, scrollX]);
-
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    switch (e.code) {
-      case 'Space':
-        e.preventDefault();
-        // Toggle play/pause
-        break;
-      case 'ArrowLeft':
-        e.preventDefault();
-        setPlayhead(playhead - 33333n); // Step back 1 frame at 30fps
-        break;
-      case 'ArrowRight':
-        e.preventDefault();
-        setPlayhead(playhead + 33333n);
-        break;
-      case 'ArrowUp':
-        e.preventDefault();
-        // Volume up
-        break;
-      case 'ArrowDown':
-        e.preventDefault();
-        // Volume down
-        break;
-      case 'KeyZ':
-        if (e.ctrlKey || e.metaKey) {
-          e.preventDefault();
-          // Undo
-        }
-        break;
-      case 'KeyY':
-        if (e.ctrlKey || e.metaKey) {
-          e.preventDefault();
-          // Redo
-        }
-        break;
-      case 'KeyB':
-        if (e.ctrlKey || e.metaKey) {
-          e.preventDefault();
-          // Razor tool - split at playhead
-        }
-        break;
-      case 'KeyS':
-        if (e.ctrlKey || e.metaKey) {
-          e.preventDefault();
-          // Save
-        }
-        break;
-    }
-  }, [playhead]);
+    seekFromEvent(e.clientX);
+  };
 
   useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleKeyDown]);
+    if (!isDraggingPlayhead) return;
+    const onMove = (e: MouseEvent) => seekFromEvent(e.clientX);
+    const onUp = () => setIsDraggingPlayhead(false);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [isDraggingPlayhead, zoom]);
 
-  // Ruler
+  const handleWheel = (e: React.WheelEvent) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const factor = e.deltaY > 0 ? 0.9 : 1.1;
+      setZoom(Math.max(0.05, Math.min(200, zoom * factor)));
+    }
+    // horizontal pan is native overflow scroll
+  };
+
+  // -------------------------------------------------------------- shortcuts
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      switch (e.code) {
+        case 'Space':
+          e.preventDefault();
+          setIsPlaying(!isPlaying);
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          setPlayhead(playhead - BigInt(33_333));
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          setPlayhead(playhead + BigInt(33_333));
+          break;
+        case 'KeyJ':
+          setPlayhead(Math.max(BigInt(0), playhead - BigInt(1_000_000)));
+          break;
+        case 'KeyL':
+          setPlayhead(playhead + BigInt(1_000_000));
+          break;
+        case 'KeyB':
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            const seg = Array.from(segments.values()).find(
+              (s: any) => playhead >= s.targetTimerange.start && playhead < s.targetTimerange.start + s.targetTimerange.duration
+            );
+            if (seg) splitSegment(seg.id, playhead);
+          }
+          break;
+        default:
+          break;
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [playhead, isPlaying, segments, setIsPlaying, setPlayhead, splitSegment]);
+
+  // ------------------------------------------------------------------- view
   return (
-    <div className={`flex flex-col h-full ${className}`}>
+    <div className={`flex flex-col h-full bg-slate-900 ${className}`}>
       {/* Ruler */}
-      {showRuler && (
-        <div className="h-10 bg-background border-b border-border relative overflow-hidden" ref={rulerRef}>
-          <canvas 
-            ref={rulerCanvasRef} 
-            className="w-full h-full" 
-            style={{ touchAction: 'none' }}
-          />
-          
-          {/* Playhead on ruler */}
-          <div 
-            className="absolute top-0 bottom-0 w-0.5 bg-red-500 pointer-events-none"
-            style={{ 
-              left: `${microsecondsToPixels(playhead)}px`,
-              transform: 'translateX(-50%)'
-            }}
-          >
-            <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-0 h-0 border-l-3 border-transparent border-b-3 border-red-500" />
-          </div>
-          
-          {/* In/Out points */}
-          {inPoint && (
-            <div 
-              className="absolute top-0 bottom-0 w-px bg-green-500 pointer-events-none"
-              style={{ left: `${microsecondsToPixels(inPoint)}px` }}
-            />
-          )}
-          {outPoint && (
-            <div 
-              className="absolute top-0 bottom-0 w-px bg-red-500 pointer-events-none"
-              style={{ left: `${microsecondsToPixels(outPoint)}px` }}
-            />
-          )}
-        </div>
-      )}
+      <div
+        className="relative border-b border-border overflow-hidden cursor-pointer"
+        style={{ height: RULER_HEIGHT }}
+        onMouseDown={(e) => {
+          setIsDraggingPlayhead(true);
+          seekFromEvent(e.clientX);
+        }}
+      >
+        <canvas ref={rulerCanvasRef} className="block" />
+      </div>
 
-      {/* Main Timeline Area */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Track Headers */}
-        <div className="w-48 bg-card border-r border-border flex-shrink-0 overflow-y-auto">
-          <div className="p-2 border-b border-border font-medium text-xs text-muted-foreground uppercase tracking-wider">
+      <div className="flex flex-1 overflow-hidden">
+        {/* Track headers */}
+        <div className="w-44 flex-shrink-0 bg-card border-r border-border overflow-y-auto">
+          <div className="px-3 py-2 border-b border-border text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             Tracks
           </div>
-          <div className="p-2 space-y-1">
-            {tracksData.map((track, index) => (
-              <div 
-                key={track.id} 
-                className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-accent transition-colors group"
-                style={{ height: `${TRACK_HEIGHT}px` }}
-              >
-                <input 
-                  type="checkbox" 
-                  className="w-4 h-4 accent-primary"
-                />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 text-sm font-medium truncate">
-                    <span className={`w-2 h-2 rounded-full ${track.type === 'video' ? 'bg-blue-500' : track.type === 'audio' ? 'bg-amber-500' : 'bg-green-500'}`} />
-                    <span className="truncate">{track.name}</span>
-                  </div>
-                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <span>{track.type}</span>
-                    <span>•</span>
-                    <span>{track.segments?.length || 0} clips</span>
-                  </div>
-                </div>
-                <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                  <button className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground">
-                    <Volume2 className="w-4 h-4" />
-                  </button>
-                  <button className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground">
-                    <VolumeX className="w-4 h-4" />
-                  </button>
-                  <button className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+          {tracks.length === 0 && (
+            <div className="p-3 text-xs text-muted-foreground">
+              No tracks yet — import media to get started.
+            </div>
+          )}
+          {tracks.map((track: any, index: number) => (
+            <div
+              key={track.id}
+              className="flex items-center gap-2 px-2 border-b border-border/50"
+              style={{ height: TRACK_HEIGHT }}
+            >
+              <span
+                className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                  track.type === 'video'
+                    ? 'bg-blue-500'
+                    : track.type === 'audio'
+                      ? 'bg-amber-500'
+                      : 'bg-emerald-500'
+                }`}
+              />
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-medium truncate">{track.name}</div>
+                <div className="text-[10px] text-muted-foreground">
+                  {track.type} · {track.segments?.length ?? 0} clips
                 </div>
               </div>
-            ))}
-          </div>
+              <div className="flex flex-col gap-1 opacity-60 hover:opacity-100 transition-opacity">
+                <button className="p-0.5 rounded hover:bg-accent" title="Mute">
+                  <Volume2 className="w-3 h-3" />
+                </button>
+                <button
+                  className="p-0.5 rounded hover:bg-accent text-destructive"
+                  title="Delete track"
+                  onClick={() => {
+                    /* handled via store command later */
+                  }}
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
 
-        {/* Timeline Canvas */}
-        <div className="flex-1 relative overflow-auto" ref={tracksContainerRef} onWheel={handleWheel} onKeyDown={handleKeyDown}>
+        {/* Scrollable canvas area */}
+        <div
+          ref={scrollRef}
+          className="flex-1 overflow-x-auto overflow-y-auto relative"
+          onWheel={handleWheel}
+        >
           <canvas
             ref={canvasRef}
-            className="absolute top-0 left-0"
-            style={{ 
-              width: '100%', 
-              height: '100%',
-              touchAction: 'none'
+            className="block cursor-text"
+            onMouseDown={handleCanvasMouseDown}
+            onMouseEnter={(e) => {
+              const segId = (e.target as HTMLCanvasElement).dataset.hover as string | undefined;
+              if (segId) setHoveredSegment(segId);
             }}
-            onClick={handleCanvasClick}
-            onMouseMove={handleCanvasMouseMove}
-            onMouseUp={handleCanvasMouseUp}
-            onMouseLeave={handleCanvasMouseUp}
-            onWheel={handleWheel}
+            onMouseLeave={() => setHoveredSegment(null)}
           />
-          
-          {/* Ruler Canvas */}
-          <canvas
-            ref={rulerCanvasRef}
-            className="absolute top-0 left-0 pointer-events-none"
-          />
-          
-          {/* Playhead indicator on timeline */}
-          <div 
-            className="absolute top-0 bottom-0 w-px bg-red-500 pointer-events-none"
-            style={{ left: `${microsecondsToPixels(playhead)}px` }}
-          >
-            <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-0 h-0 border-l-3 border-transparent border-b-3 border-red-500" />
-          </div>
-          
-          {/* In/Out points */}
-          {inPoint && (
-            <div 
-              className="absolute top-0 bottom-0 w-px bg-green-500 pointer-events-none"
-              style={{ left: `${microsecondsToPixels(inPoint)}px` }}
-            />
-          )}
-          {outPoint && (
-            <div 
-              className="absolute top-0 bottom-0 w-px bg-red-500 pointer-events-none"
-              style={{ left: `${microsecondsToPixels(outPoint)}px` }}
-            />
-          )}
         </div>
+      </div>
+
+      {/* Status bar */}
+      <div className="flex items-center justify-between px-3 py-1 border-t border-border bg-card text-[10px] text-muted-foreground font-mono">
+        <span>{formatTimecode(playhead)}</span>
+        <span className="flex items-center gap-3">
+          <span className="inline-flex items-center gap-1">
+            <ZoomOut className="w-3 h-3" /> {Math.round(zoom * 100)}%
+            <ZoomIn className="w-3 h-3" />
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <Scissors className="w-3 h-3" /> Ctrl+B split
+          </span>
+        </span>
       </div>
     </div>
   );
 }
-
-export { Timeline };

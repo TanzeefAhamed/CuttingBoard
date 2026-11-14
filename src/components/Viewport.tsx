@@ -1,278 +1,239 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { useStore } from '../store';
-import { 
-  Play, Pause, SkipBack, SkipForward, 
-  RotateCcw, RotateCw, Expand, Minimize2,
-  Volume2, VolumeX, Settings, 
-  Camera, Image, Video, 
-  Grid, Layers, Maximize2, Minimize2
-} from 'lucide-react';
+import { Maximize2, Minimize2, Pause, Play, Settings, SkipBack, SkipForward, Volume2 } from 'lucide-react';
 import { SafeAreaOverlay } from './SafeArea';
 
 interface ViewportProps {
   className?: string;
 }
 
+function formatTimecode(us: number | bigint): string {
+  const totalSeconds = Number(us) / 1_000_000;
+  const hrs = Math.floor(totalSeconds / 3600);
+  const mins = Math.floor((totalSeconds % 3600) / 60);
+  const secs = Math.floor(totalSeconds % 60);
+  const hundredths = Math.floor((totalSeconds % 1) * 100);
+  return `${hrs.toString().padStart(2, '0')}:${mins
+    .toString()
+    .padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${hundredths
+    .toString()
+    .padStart(2, '0')}`;
+}
+
 export function Viewport({ className = '' }: ViewportProps) {
-  const { 
-    isPlaying, setIsPlaying, 
-    playbackSpeed, setPlaybackSpeed,
-    playhead, setPlayhead,
-    zoom, setZoom,
-    canvasAspectRatio, setCanvasAspectRatio,
+  const {
+    isPlaying,
+    setIsPlaying,
+    playhead,
+    setPlayhead,
     safeArea,
-    playhead: currentTime,
-    duration,
-    canvasRef: externalCanvasRef
+    canvasAspectRatio,
   } = useStore();
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const canvasWrapperRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
-  const [isMuted, setIsMuted] = useState(false);
-  const [playbackRate, setPlaybackRate] = useState(1);
 
-  const canvasRefCombined = externalCanvasRef || canvasRef;
-
-  // Initialize canvas
+  // Canvas sizing (DPR-aware)
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    const wrapper = wrapperRef.current;
+    if (!canvas || !wrapper) return;
 
-    const ctx = canvas.getContext('2d', { 
-      alpha: true, 
-      desynchronized: true,
-      willReadFrequently: false 
-    });
-    
-    if (!ctx) return;
-
-    // Set canvas size
     const resize = () => {
-      const wrapper = canvasWrapperRef.current;
-      if (!wrapper) return;
-      
       const rect = wrapper.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
-      
-      canvas.width = rect.width * dpr;
-      canvas.height = rect.height * dpr;
-      canvas.style.width = `${rect.width}px`;
-      canvas.style.height = `${rect.height}px`;
-      
-      ctx.scale(dpr, dpr);
+      canvas.width = Math.max(1, Math.round(rect.width * dpr));
+      canvas.height = Math.max(1, Math.round(rect.height * dpr));
     };
 
     resize();
-    window.addEventListener('resize', resize);
-    return () => window.removeEventListener('resize', resize);
+    const observer = new ResizeObserver(resize);
+    observer.observe(wrapper);
+    return () => observer.disconnect();
   }, []);
 
-  // Render loop
+  // Render loop: draws placeholder composition preview
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    let animationFrameId: number;
-
+    let raf = 0;
     const render = () => {
-      // Clear canvas
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      
-      // Draw background
-      ctx.fillStyle = '#1a1a1a';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      const { width, height } = canvas;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, width, height);
 
-      // Draw safe area overlay
-      // SafeAreaOverlay would be rendered here
+      // Letterboxed 16:9 preview area
+      const targetAspect = 16 / 9;
+      const canvasAspect = width / height;
+      let w = width;
+      let h = height;
+      if (canvasAspect > targetAspect) {
+        w = height * targetAspect;
+      } else {
+        h = width / targetAspect;
+      }
+      const ox = (width - w) / 2;
+      const oy = (height - h) / 2;
 
-      animationFrameId = requestAnimationFrame(render);
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(ox, oy, w, h);
+
+      // Grid lines
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 1;
+      for (let i = 1; i < 3; i++) {
+        ctx.beginPath();
+        ctx.moveTo(ox + (w / 3) * i, oy);
+        ctx.lineTo(ox + (w / 3) * i, oy + h);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(ox, oy + (h / 3) * i);
+        ctx.lineTo(ox + w, oy + (h / 3) * i);
+        ctx.stroke();
+      }
+
+      // Center label
+      ctx.fillStyle = '#475569';
+      ctx.font = `${Math.max(12, Math.round(h / 25))}px Inter, system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('CuttingBoard Preview', ox + w / 2, oy + h / 2);
+
+      raf = requestAnimationFrame(render);
     };
 
-    render();
-    return () => cancelAnimationFrame(animationFrameId);
+    raf = requestAnimationFrame(render);
+    return () => cancelAnimationFrame(raf);
   }, []);
 
-  const handlePlayPause = () => {
-    // Toggle play/pause
-  };
-
-  const handleSeek = (time: number) => {
-    // Seek to time
-  };
-
-  const handleVolumeChange = (value: number) => {
-    // Handle volume change
-  };
-
-  const handleSpeedChange = (rate: number) => {
-    // Handle speed change
-  };
-
-  const toggleFullscreen = () => {
-    // Toggle fullscreen
-  };
-
-  const formatTime = (seconds: number) => {
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-    const ms = Math.floor((seconds % 1) * 100);
-    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
-  };
-
-  const formatTimeShort = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const handleKeyDown = (e: KeyboardEvent) => {
-    switch (e.code) {
-      case 'Space':
-        e.preventDefault();
-        // Toggle play/pause
-        break;
-      case 'ArrowLeft':
-        e.preventDefault();
-        // Step back
-        break;
-      case 'ArrowRight':
-        e.preventDefault();
-        // Step forward
-        break;
-      case 'ArrowUp':
-        e.preventDefault();
-        // Volume up
-        break;
-      case 'ArrowDown':
-        e.preventDefault();
-        // Volume down
-        break;
-      case 'KeyF':
-        e.preventDefault();
-        // Toggle fullscreen
-        break;
-      case 'KeyM':
-        e.preventDefault();
-        // Toggle mute
-        break;
-    }
-  };
-
+  // Keyboard shortcuts (space = play/pause)
   useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      switch (e.code) {
+        case 'Space':
+          e.preventDefault();
+          setIsPlaying(!isPlaying);
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          setPlayhead(playhead > BigInt(33_333) ? playhead - BigInt(33_333) : BigInt(0));
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          setPlayhead(playhead + BigInt(33_333));
+          break;
+        default:
+          break;
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isPlaying, playhead, setIsPlaying, setPlayhead]);
 
   return (
-    <div 
-      ref={canvasWrapperRef}
-      className={`relative w-full h-full bg-black ${isFullscreen ? 'fixed inset-0 z-50' : ''} ${className}`}
+    <div
+      ref={wrapperRef}
+      className={`relative w-full h-full bg-black overflow-hidden ${className}`}
       onMouseEnter={() => setShowControls(true)}
       onMouseLeave={() => setShowControls(false)}
       tabIndex={0}
     >
-      {/* Canvas */}
-      <canvas
-        ref={canvasRef}
-        className="w-full h-full block"
-        style={{ 
-          backgroundColor: '#1a1a1a',
-          width: '100%',
-          height: '100%',
-        }}
-      />
+      <canvas ref={canvasRef} className="w-full h-full block" />
 
-      {/* Safe Area Overlay */}
-      <SafeAreaOverlay 
-        aspectRatio="16:9"
-        showActionSafe={true}
-        showTitleSafe={true}
-        showTikTokSafe={false}
-      />
+      {/* Safe area overlay driven by store */}
+      <div className="absolute inset-0 pointer-events-none">
+        <SafeAreaOverlay
+          aspectRatio={canvasAspectRatio}
+          showActionSafe={safeArea.actionSafe}
+          showTitleSafe={safeArea.titleSafe}
+          showTikTokSafe={safeArea.tiktokSafe}
+        />
+      </div>
 
-      {/* Controls Overlay */}
+      {/* Transport overlay */}
       {showControls && (
-        <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
-          {/* Progress Bar */}
-          <div className="mb-4">
-            <div 
-              className="relative h-2 bg-white/20 rounded-full cursor-pointer"
-              onClick={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect();
-                const percent = (e.nativeEvent.clientX - rect.left) / rect.width;
-                // Seek to position
-              }}
-            >
-              <div 
-                className="h-full bg-primary rounded-full transition-all duration-100"
-                style={{ width: `${(100 * 0.5)}%` }} // Would be dynamic based on current time
+        <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/80 to-transparent">
+          {/* Progress */}
+          <div className="mb-2">
+            <div className="relative h-1.5 bg-white/20 rounded-full">
+              <div
+                className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 bg-red-500 rounded-full shadow"
+                style={{ left: '10%' }}
               />
-            </div>
-            <div className="flex justify-between text-xs text-white/70 mt-1 px-1">
-              <span>00:00:00.00</span>
-              <span>00:10:00.00</span>
             </div>
           </div>
 
-          {/* Controls */}
           <div className="flex items-center justify-between">
-            {/* Left Controls */}
-            <div className="flex items-center gap-2">
-              <button className="p-2 text-white/80 hover:text-white transition-colors" title="Skip Back (J)">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <polygon points="19 20 9 12 19 4 19 20" />
-                  <line x1="5" y1="19" x2="5" y2="5" />
-                </svg>
+            {/* Left: transport */}
+            <div className="flex items-center gap-1">
+              <button
+                className="p-1.5 text-white/80 hover:text-white transition-colors"
+                title="Skip Back (J)"
+                onClick={() => setPlayhead(playhead > BigInt(1_000_000) ? playhead - BigInt(1_000_000) : BigInt(0))}
+              >
+                <SkipBack className="w-4 h-4" />
               </button>
-              <button className="p-2 text-white/80 hover:text-white transition-colors" title="Play/Pause (Space)">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                  <polygon points="5 3 19 12 5 21" />
-                </svg>
+              <button
+                className="p-1.5 text-white hover:text-white transition-colors"
+                title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
+                onClick={() => setIsPlaying(!isPlaying)}
+              >
+                {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
               </button>
-              <button className="p-2 text-white/70 hover:text-white transition-colors" title="Skip Forward (L)">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <polygon points="5 4 15 12 5 20" />
-                  <line x1="19" y1="20" x2="19" y2="4" />
-                </svg>
+              <button
+                className="p-1.5 text-white/80 hover:text-white transition-colors"
+                title="Skip Forward (L)"
+                onClick={() => setPlayhead(playhead + BigInt(1_000_000))}
+              >
+                <SkipForward className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Center - Time Display */}
-            <div className="flex items-center gap-4 text-white/80 font-mono text-sm">
-              <span className="font-mono">00:00:00.00 / 00:10:00.00</span>
+            {/* Center: timecode */}
+            <div className="text-white/80 font-mono text-xs">
+              {formatTimecode(playhead)}
             </div>
 
-            {/* Right Controls */}
-            <div className="flex items-center gap-2">
-              <button className="p-2 text-white/70 hover:text-white transition-colors" title="Volume">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
-                </svg>
-              </button>
-              <input 
-                type="range" 
-                min="0" 
-                max="1" 
-                step="0.1" 
-                value={1}
-                className="w-24 h-1 accent-primary"
-                onChange={(e) => {}}
+            {/* Right: misc */}
+            <div className="flex items-center gap-1">
+              <Volume2 className="w-4 h-4 text-white/70" />
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={volume}
+                onChange={(e) => setVolume(Number(e.target.value))}
+                className="w-20 h-1 accent-primary"
+                title="Volume"
               />
-              <button className="p-2 text-white/70 hover:text-white transition-colors" title="Fullscreen (F)">
-                <Maximize2 className="w-5 h-5" />
+              <button
+                className="p-1.5 text-white/70 hover:text-white transition-colors"
+                title="Toggle fullscreen"
+                onClick={() => setIsFullscreen((f) => !f)}
+              >
+                {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
               </button>
-              <button className="p-2 text-white/70 hover:text-white transition-colors" title="Settings">
-                <Settings className="w-5 h-5" />
+              <button
+                className="p-1.5 text-white/70 hover:text-white transition-colors"
+                title="Viewer settings"
+              >
+                <Settings className="w-4 h-4" />
               </button>
             </div>
           </div>
