@@ -1,10 +1,10 @@
 # CuttingBoard
 
-> A powerful, standalone **web-based video editor** built from the ground up with a custom **WebCodecs architecture**. Designed to match or exceed top-tier desktop editors — running entirely in the browser, wrapped in Electron for native desktop distribution.
+A professional, standalone web-based video editor built from the ground up with a custom WebCodecs architecture. Designed to match or exceed top-tier desktop editors — running entirely in the browser, with an Electron wrapper for native desktop distribution.
 
 ---
 
-## 🎬 Overview
+## Overview
 
 CuttingBoard is a professional-grade non-linear editor (NLE) built entirely on modern web standards:
 
@@ -17,13 +17,13 @@ CuttingBoard is a professional-grade non-linear editor (NLE) built entirely on m
 | **TypeScript + Immer** | Type-safe, immutable state with transactional undo/redo |
 | **Electron** | Native desktop app (Windows/macOS/Linux) with secure IPC |
 
-**Zero native dependencies** for the core editor — the entire pipeline runs on web standards.
+Zero native dependencies for the core editor — the entire pipeline runs on web standards.
 
 ---
 
-## ✨ Feature Highlights
+## Feature Highlights
 
-### 🎞️ Timeline & Project Core
+### Timeline & Project Core
 - **Microsecond-precision timebase** (`bigint` µs) — zero drift at any framerate (23.976, 24, 25, 29.97, 30, 50, 59.94, 60 fps)
 - **Multi-track magnetic & free timeline** — Primary video (ripple), overlay B-roll, audio (dialogue/music/SFX), text, adjustment layers
 - **Ripple edit & gap management** — Toggleable magnetic timeline with automatic gap closing
@@ -31,21 +31,21 @@ CuttingBoard is a professional-grade non-linear editor (NLE) built entirely on m
 - **Reverse playback, freeze frames, compound clips** — Full nested sequence support
 - **Canvas aspect presets** (16:9, 9:16, 1:1, 4:3, 21:9) + Gaussian blur background
 
-### 🎨 Visual Effects & Compositing
+### Visual Effects & Compositing
 - **GPU-accelerated compositor** (WebGL 2 / WebGPU) — 60 fps real-time preview
 - **14 blend modes** (Normal, Multiply, Screen, Overlay, Color Dodge, etc.)
 - **Geometric & freeform masks** — Rectangle, ellipse, linear, mirror, radial with feathering
 - **Chroma keying** — Green/blue screen with despill and edge feathering
 - **AI Smart Cutout** — Neural portrait segmentation (MediaPipe/Transformers.js) without green screen
 
-### 🎨 Color Grading (Pro Grade)
+### Color Grading (Pro Grade)
 - **3-way Lift/Gamma/Gain wheels** — Independent RGB + master luminance
 - **8-channel HSL selective correction** — Red, Orange, Yellow, Green, Cyan, Blue, Purple, Magenta
 - **Spline RGB & Luma curves** — Arbitrary control points with cubic spline interpolation
 - **3D LUT (.cube) support** — 17³/33³/65³ with trilinear GPU sampling
 - **12 photographic adjustments** — Temperature, Tint, Exposure, Contrast, Highlights, Shadows, Whites, Blacks, Saturation, Sharpness, Clarity, Vignette
 
-### 🔊 Audio Engine (Studio Grade)
+### Audio Engine (Studio Grade)
 - **32-bit float @ 48 kHz** multi-track mixer with sample-accurate automation
 - **Exponential fade in/out** via `AudioParam` scheduling
 - **RNNoise neural denoising** (WASM in AudioWorklet, zero main-thread jitter)
@@ -55,27 +55,27 @@ CuttingBoard is a professional-grade non-linear editor (NLE) built entirely on m
 - **AI vocal separation** — 2-stem (vocals + instrumental) via HTDemucs ONNX
 - **Beat detection** — Spectral flux onset detection for music-synced editing
 
-### 📝 Text, Captions & AI
+### Text, Captions & AI
 - **Vector text rendering** — Font, weight, tracking, leading, stroke, shadow, glow, curved path
 - **Auto-captions** — Offline Whisper.cpp (WASM) with word-level timestamps
 - **SRT/VTT/ASS import/export** — Round-trip subtitle fidelity
 - **Text-to-Speech** — Piper/Coqui WASM for offline voice synthesis
 - **Animated text templates** — Lower-thirds, titles, social callouts with auto-scaling backgrounds
 
-### 🎞️ Motion, Stickers & VFX
+### Motion, Stickers & VFX
 - **Motion tracking** — Lucas-Kanade/Farnébak optical flow (OpenCV.js WASM)
 - **Lottie/APNG/WebP/GIF stickers** — Vector animation with loop/speed control
 - **Transition engine** — Cross dissolve, dip to black, slide, push, wipe, zoom blur, flash, glitch
 - **VFX shaders** — RGB split glitch, directional/gaussian blur, film grain, halftone, prism, glow
 
-### 📤 Export & Delivery
+### Export & Delivery
 - **WebCodecs VideoEncoder** — H.264 (NVENC/QSV/x264), HEVC (NVENC/QSV/x265), AV1 (SVT-AV1)
 - **CBR/VBR/CQ rate control** — ±5% bitrate accuracy
 - **Audio-only export** — MP3, AAC, WAV (16/24-bit), FLAC
 - **C2PA Content Credentials** — Cryptographic provenance signing (author, tool, AI edits)
 - **OTIO/FCPXML/AAF/EDL** — Round-trip with Premiere, Final Cut, DaVinci Resolve
 
-### 🖥️ Application Experience
+### Application Experience
 - **Dockable multi-pane layout** — Media browser, viewer, inspector, timeline (persists across restarts)
 - **Interactive canvas viewport** — Transform gizmos (scale, rotate, position), safe margins (TikTok/TV safe zones)
 - **60 fps virtualized timeline** — Waveforms, trim handles, razor tool, magnetic snap, inline keyframe curves
@@ -85,7 +85,7 @@ CuttingBoard is a professional-grade non-linear editor (NLE) built entirely on m
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -124,7 +124,7 @@ CuttingBoard is a professional-grade non-linear editor (NLE) built entirely on m
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 - **Node.js 20+** (for Electron build tooling)
@@ -162,7 +162,7 @@ npm run test:coverage
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 cuttingboard/
@@ -173,7 +173,7 @@ cuttingboard/
 │       ├── io/            # CapCut draft JSON, OTIO adapter
 │       ├── timeline/      # TimePoint, Segment, Track, Timeline
 │       └── webcodecs/     # VideoDecoder, VideoEncoder, PlaybackEngine
-├── tests/                 # 118 tests across 5 suites
+├── tests/                 # 300+ tests across 13 suites
 ├── package.json
 ├── tsconfig.json
 └── vitest.config.ts
@@ -181,19 +181,19 @@ cuttingboard/
 
 ---
 
-## 📋 Build Plan (3 Parts)
+## Build Plan (3 Parts)
 
 | Part | Focus | Status |
 |------|-------|--------|
 | **Part 1** | Core Engine & Timeline Foundation | ✅ Complete |
-| **Part 2** | Media Pipelines, Effects, Audio & AI | 🔄 In Progress |
-| **Part 3** | Electron Shell, UI & Production | ⏳ Planned |
+| **Part 2** | Media Pipelines, Effects, Audio & AI | ✅ Complete |
+| **Part 3** | Electron Shell, UI & Production | ✅ Complete |
 
 ---
 
-## 🧪 Testing
+## Testing
 
-All features have **exactly one verification test** with deterministic pass/fail criteria. Run `npm test` to execute the full suite (118 tests).
+All features have **exactly one verification test** with deterministic pass/fail criteria. Run `npm test` to execute the full suite (314 tests).
 
 | Test Suite | Tests | Coverage |
 |------------|-------|----------|
@@ -202,10 +202,19 @@ All features have **exactly one verification test** with deterministic pass/fail
 | `commands.test.ts` | 29 | Undo/redo, command history, composite commands |
 | `capcutDraft.test.ts` | 16 | JSON parser/serializer, OTIO bridge |
 | `webcodecs.test.ts` | 18 | Decoder/encoder config, demuxer, scheduler |
+| `webcodecsWorker.test.ts` | 1 | Worker infrastructure |
+| `compositorWorker.test.ts` | 26 | Decoder/encoder pipelines, frame cache |
+| `aiWorkers.test.ts` | 25 | Portrait matting, ASR, motion tracking, vocal separation |
+| `viewport.test.ts` | 19 | Canvas viewport, SVG gizmos, safe margins, J/K/L shuttle |
+| `audioEngine.test.ts` | 64 | AudioContext, track gain, RNNoise, BS.1770, WSOLA, limiter |
+| `colorGrading.test.ts` | 29 | LGG, HSL, curves, 3D LUT, shaders |
+| `timelineCanvas.test.ts` | 18 | Virtualized rendering, waveforms, trim, razor, snap |
+| `aiWorkers.test.ts` | 25 | Portrait matting, Whisper, motion tracking, vocal separation |
+| `milestone35.test.ts` | 31 | Inspector, subtitles, export, C2PA, 1080p60 export |
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch
@@ -215,15 +224,16 @@ All features have **exactly one verification test** with deterministic pass/fail
 
 ---
 
-## 📄 License
+## License
 
 MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 Built on the shoulders of giants:
+
 - **WebCodecs, WebGPU, Web Audio API** — W3C standards
 - **WebCodecs, WebGPU, Web Audio API** — Browser vendors
 - **FFmpeg, libavcodec, libavformat** — Multimedia backbone
