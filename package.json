@@ -1,0 +1,38 @@
+{
+  "name": "cuttingboard",
+  "version": "0.1.0",
+  "description": "Web-based video editor using WebCodecs, WebGL/WebGPU, Web Audio API",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "build": "tsc -p tsconfig.json",
+    "dev": "vite",
+    "lint": "eslint src --ext .ts,.tsx"
+  },
+  "keywords": [
+    "video-editor",
+    "webcodecs",
+    "webgl",
+    "webgpu",
+    "webaudio",
+    "nle"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.0.0",
+    "@vitest/coverage-v8": "^1.0.0",
+    "eslint": "^8.55.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0"
+  },
+  "dependencies": {
+    "immer": "^10.0.3",
+    "ajv": "^8.12.0",
+    "mp4box": "^0.5.3"
+  }
+}
