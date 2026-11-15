@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useStore } from '../store';
-import { Maximize2, Minimize2, Pause, Play, Settings, SkipBack, SkipForward, Volume2, VolumeX } from 'lucide-react';
+import { Maximize2, Minimize2, Pause, Play, Settings, SkipBack, SkipForward, Volume2, VolumeX, Camera } from 'lucide-react';
 import { SafeAreaOverlay } from './SafeArea';
 import type { Microseconds } from '../core/timeline/types';
 import { renderWebGLFrame, renderFrame, syncMedia } from '../editor/renderer';
@@ -152,6 +152,20 @@ export function Viewport({ className = '' }: ViewportProps) {
     else void el.requestFullscreen?.().catch(() => undefined);
   };
 
+  const takeSnapshot = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    try {
+      const dataUrl = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `cuttingboard-frame-${Date.now()}.png`;
+      a.click();
+    } catch (e) {
+      console.warn('Snapshot error', e);
+    }
+  };
+
   // Scrub bar
   const seekFromBar = useCallback(
     (clientX: number) => {
@@ -272,6 +286,14 @@ export function Viewport({ className = '' }: ViewportProps) {
                 className="w-20 h-1 accent-primary"
                 title="Volume"
               />
+              <button
+                className="p-1.5 text-white/70 hover:text-white transition-colors"
+                title="Capture frame snapshot (PNG)"
+                onClick={takeSnapshot}
+                data-testid="viewport-snapshot-btn"
+              >
+                <Camera className="w-4 h-4" />
+              </button>
               <button className="p-1.5 text-white/70 hover:text-white transition-colors" title="Toggle fullscreen" onClick={toggleFullscreen}>
                 {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
               </button>

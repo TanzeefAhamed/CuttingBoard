@@ -13,6 +13,10 @@ import {
   Copy,
   Settings,
   Type,
+  MousePointer,
+  Hand,
+  Magnet,
+  Link2,
 } from 'lucide-react';
 import type { Microseconds } from '../core/timeline/types';
 import { MEDIA_DRAG_TYPE } from './MediaBrowser';
@@ -76,6 +80,12 @@ export function Timeline({ className = '' }: { className?: string }) {
   const setActivePane = useStore((s) => s.setActivePane);
   const reorderTrack = useStore((s) => s.reorderTrack);
   const addTextSegment = useStore((s) => s.addTextSegment);
+  const activeTool = useStore((s) => s.activeTool);
+  const setActiveTool = useStore((s) => s.setActiveTool);
+  const snapEnabled = useStore((s) => s.settings.snapEnabled);
+  const setSettings = useStore((s) => s.setSettings);
+  const rippleEnabled = useStore((s) => s.rippleEnabled);
+  const setRippleEnabled = useStore((s) => s.setRippleEnabled);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rulerRef = useRef<HTMLCanvasElement>(null);
@@ -352,6 +362,14 @@ export function Timeline({ className = '' }: { className?: string }) {
     const st = useStore.getState();
     const { x, y } = canvasPoint(e.clientX, e.clientY);
     const hit = hitTest(x, y);
+
+    if (st.activeTool === 'razor') {
+      const clickUs = pxToUs(Math.max(0, x), st.zoom);
+      st.setPlayhead(clickUs);
+      st.splitAtPlayhead();
+      return;
+    }
+
     if (hit) {
       const seg = st.segments.get(hit.id)!;
       st.setSelectedSegment(hit.id);
@@ -602,7 +620,30 @@ export function Timeline({ className = '' }: { className?: string }) {
 
       {/* Status bar */}
       <div className="flex items-center justify-between px-3 py-1 border-t border-border bg-card text-[10px] text-muted-foreground font-mono">
-        <span data-testid="timeline-timecode">{formatTimecode(playhead, showFrames)}</span>
+        <div className="flex items-center gap-3">
+          <span data-testid="timeline-timecode">{formatTimecode(playhead, showFrames)}</span>
+          <div className="flex items-center gap-1 border-l border-border pl-2">
+            <button
+              onClick={() => setActiveTool('select')}
+              className={`p-1 rounded ${activeTool === 'select' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent text-muted-foreground'}`}
+              title="Selection Tool (V)"
+            >
+              <MousePointer className="w-3 h-3" />
+            </button>
+            <button
+              onClick={() => setActiveTool('razor')}
+              className={`p-1 rounded ${activeTool === 'razor' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent text-muted-foreground'}`}
+              title="Razor Cut Tool (C) - click clip to split"
+            >
+              <Scissors className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+
+        <span className="text-[10px] text-muted-foreground hidden md:inline select-none">
+          Drag to move · edges trim · Ctrl+D duplicates · Del removes
+        </span>
+
         <span className="flex items-center gap-3">
           <button className="inline-flex items-center gap-1 hover:text-foreground" onClick={() => setZoom(zoom / 1.25)} title="Zoom out">
             <ZoomOut className="w-3 h-3" />

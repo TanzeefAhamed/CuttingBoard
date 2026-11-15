@@ -1,11 +1,14 @@
 import React, { useEffect } from 'react';
-import { Settings, Search, Type } from 'lucide-react';
+import { Settings, Search, Type, Layers, Palette, Volume2 } from 'lucide-react';
 import { useStore } from './store';
 import { Timeline } from './components/Timeline';
 import { Viewport } from './components/Viewport';
 import { Inspector } from './components/Inspector';
 import { MediaBrowser } from './components/MediaBrowser';
 import { TextCaptionsPanel } from './components/TextCaptionsPanel';
+import { ElementsPanel } from './components/ElementsPanel';
+import { EffectsPanel } from './components/EffectsPanel';
+import { AudioPanel } from './components/AudioPanel';
 import { Toolbar } from './components/Toolbar';
 import { Dialogs } from './components/Dialogs';
 import { useEditorEffects } from './editor/useEditorEffects';
@@ -159,14 +162,14 @@ function AppShell() {
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-background">
       <Toolbar />
       <div className="flex flex-1 min-h-0">
-        {/* Left: Media & Text/Captions Tabs */}
+        {/* Left: Creative Suite Tabs (Media, Text, Elements, Effects, Audio) */}
         <SidebarPane
           paneId="media-browser"
           customHeader={
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-0.5 overflow-x-auto py-0.5 scrollbar-none">
               <button
                 data-testid="tab-media"
-                className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs font-semibold uppercase tracking-wider transition-colors ${
+                className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold uppercase tracking-wider transition-colors flex-shrink-0 ${
                   activeSidebarTab === 'media'
                     ? 'bg-primary/20 text-primary'
                     : 'text-muted-foreground hover:text-foreground'
@@ -177,27 +180,76 @@ function AppShell() {
                   setActivePane('media-browser');
                 }}
               >
-                <Search className="w-3.5 h-3.5" /> Media
+                <Search className="w-3 h-3" /> Media
               </button>
               <button
-                data-testid="tab-captions"
-                className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs font-semibold uppercase tracking-wider transition-colors ${
-                  activeSidebarTab === 'captions'
+                data-testid="tab-text"
+                className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold uppercase tracking-wider transition-colors flex-shrink-0 ${
+                  activeSidebarTab === 'text' || activeSidebarTab === 'captions'
                     ? 'bg-primary/20 text-primary'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
                 onClick={(e) => {
                   e.stopPropagation();
-                  setActiveSidebarTab('captions');
+                  setActiveSidebarTab('text');
                   setActivePane('media-browser');
                 }}
               >
-                <Type className="w-3.5 h-3.5" /> Text & Captions
+                <Type className="w-3 h-3" /> Text
+              </button>
+              <button
+                data-testid="tab-elements"
+                className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold uppercase tracking-wider transition-colors flex-shrink-0 ${
+                  activeSidebarTab === 'elements'
+                    ? 'bg-primary/20 text-primary'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveSidebarTab('elements');
+                  setActivePane('media-browser');
+                }}
+              >
+                <Layers className="w-3 h-3" /> Shapes
+              </button>
+              <button
+                data-testid="tab-effects"
+                className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold uppercase tracking-wider transition-colors flex-shrink-0 ${
+                  activeSidebarTab === 'effects'
+                    ? 'bg-primary/20 text-primary'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveSidebarTab('effects');
+                  setActivePane('media-browser');
+                }}
+              >
+                <Palette className="w-3 h-3" /> Effects
+              </button>
+              <button
+                data-testid="tab-audio"
+                className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold uppercase tracking-wider transition-colors flex-shrink-0 ${
+                  activeSidebarTab === 'audio'
+                    ? 'bg-primary/20 text-primary'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveSidebarTab('audio');
+                  setActivePane('media-browser');
+                }}
+              >
+                <Volume2 className="w-3 h-3" /> Audio
               </button>
             </div>
           }
         >
-          {activeSidebarTab === 'media' ? <MediaBrowser /> : <TextCaptionsPanel />}
+          {activeSidebarTab === 'media' && <MediaBrowser />}
+          {(activeSidebarTab === 'text' || activeSidebarTab === 'captions') && <TextCaptionsPanel />}
+          {activeSidebarTab === 'elements' && <ElementsPanel />}
+          {activeSidebarTab === 'effects' && <EffectsPanel />}
+          {activeSidebarTab === 'audio' && <AudioPanel />}
         </SidebarPane>
 
         {/* Center: Viewport + Timeline */}

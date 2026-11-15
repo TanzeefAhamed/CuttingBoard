@@ -17,6 +17,8 @@ import {
   FileAudio,
   Trash2,
   Upload,
+  Monitor,
+  Square,
 } from 'lucide-react';
 
 
@@ -29,6 +31,8 @@ export function MediaBrowser({ className = '' }: { className?: string }) {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [dragOver, setDragOver] = useState(false);
+  const [isScreenRecording, setIsScreenRecording] = useState(false);
+  const screenRecorderRef = React.useRef<MediaRecorder | null>(null);
 
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -152,6 +156,47 @@ export function MediaBrowser({ className = '' }: { className?: string }) {
       return next;
     });
 
+  const startScreenRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      const rec = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+      rec.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+      rec.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const id = `screen-${crypto.randomUUID().slice(0, 8)}`;
+        const newItem: MediaItem = {
+          id,
+          name: `Screen Recording ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+          type: 'video',
+          url,
+          size: blob.size,
+          createdAt: Date.now(),
+        };
+        addMedia(newItem);
+        addMediaToTimeline(id);
+        setIsScreenRecording(false);
+      };
+      screenRecorderRef.current = rec;
+      rec.start();
+      setIsScreenRecording(true);
+    } catch (err) {
+      console.warn('Screen recording cancelled or not supported', err);
+      setIsScreenRecording(false);
+    }
+  };
+
+  const stopScreenRecording = () => {
+    if (screenRecorderRef.current && screenRecorderRef.current.state === 'recording') {
+      screenRecorderRef.current.stop();
+    }
+    setIsScreenRecording(false);
+  };
+
   // ------------------------------------------------------------------- view
   return (
     <div className={`h-full flex flex-col bg-card ${className}`}>
@@ -168,6 +213,23 @@ export function MediaBrowser({ className = '' }: { className?: string }) {
               className="w-full pl-8 pr-2 py-1.5 text-xs bg-input border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
             />
           </div>
+          {isScreenRecording ? (
+            <button
+              className="p-1.5 rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
+              title="Stop screen recording"
+              onClick={stopScreenRecording}
+            >
+              <Square className="w-4 h-4 fill-current" />
+            </button>
+          ) : (
+            <button
+              className="p-1.5 rounded-md bg-muted hover:bg-accent transition-colors"
+              title="Record screen"
+              onClick={startScreenRecording}
+            >
+              <Monitor className="w-4 h-4" />
+            </button>
+          )}
           <button
             className="p-1.5 rounded-md bg-muted hover:bg-accent transition-colors"
             title="Import media"

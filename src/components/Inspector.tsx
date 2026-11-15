@@ -42,6 +42,7 @@ export function Inspector({ className = '' }: InspectorProps) {
   const updateSegment = useStore((s) => s.updateSegment);
   const splitAtPlayhead = useStore((s) => s.splitAtPlayhead);
   const removeSegment = useStore((s) => s.removeSegment);
+  const applyColorPreset = useStore((s) => s.applyColorPreset);
 
   const [tab, setTab] = useState<TabId>('video');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -241,6 +242,21 @@ export function Inspector({ className = '' }: InspectorProps) {
 
         {activeTab === 'speed' && (
           <Section title="Speed" icon={<Clock className="w-4 h-4" />} expanded={open('speed')} onToggle={() => toggle('speed')}>
+            <div className="flex items-center gap-1.5 py-1">
+              {[0.5, 1, 2, 4].map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setSpeed(s * 100)}
+                  className={`flex-1 py-1 text-xs rounded border transition-colors ${
+                    segment.speed === s
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-muted/50 border-border hover:bg-muted text-muted-foreground'
+                  }`}
+                >
+                  {s}x
+                </button>
+              ))}
+            </div>
             <Row label="Speed">
               <SliderInput label="speed" value={Math.round(segment.speed * 100)} min={10} max={800} step={5} unit="%" onChange={setSpeed} />
             </Row>
@@ -255,6 +271,25 @@ export function Inspector({ className = '' }: InspectorProps) {
 
         {activeTab === 'color' && (
           <>
+            <Section title="1-Click Looks" icon={<Sparkles className="w-4 h-4 text-amber-500" />} expanded={open('looks')} onToggle={() => toggle('looks')}>
+              <div className="grid grid-cols-3 gap-1.5 py-1">
+                {[
+                  { id: 'teal-orange', label: 'Teal & Orange' },
+                  { id: 'vintage', label: 'Vintage 70s' },
+                  { id: 'cyberpunk', label: 'Cyberpunk' },
+                  { id: 'noir', label: 'Noir B&W' },
+                  { id: 'crisp', label: 'Crisp Clean' },
+                ].map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => applyColorPreset(item.id as any)}
+                    className="px-2 py-1.5 rounded text-[11px] font-medium border border-border bg-card/60 hover:bg-primary/20 hover:border-primary transition-all text-center truncate"
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </Section>
             <Section title="Basic Adjustments" icon={<Contrast className="w-4 h-4" />} expanded={open('color-adjust')} onToggle={() => toggle('color-adjust')}>
               <Row label="Brightness"><SliderInput label="brightness" value={filters.brightness} min={0} max={200} unit="%" onChange={(v) => setFilters({ brightness: v }, 'brightness')} /></Row>
               <Row label="Contrast"><SliderInput label="contrast" value={filters.contrast} min={0} max={200} unit="%" onChange={(v) => setFilters({ contrast: v }, 'contrast')} /></Row>

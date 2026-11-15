@@ -100,4 +100,30 @@ describe('editor store wiring', () => {
     expect(useStore.getState().tracks[0]!.id).toBe(t0);
     expect(useStore.getState().tracks[1]!.id).toBe(t1);
   });
+
+  it('creates shape elements and device mockup layers', () => {
+    const shapeId = useStore.getState().addShapeSegment('device-macbook', 'MacBook Showcase');
+    expect(shapeId).toBeTruthy();
+    const seg = useStore.getState().segments.get(shapeId)!;
+    expect(seg.media.metadata?.shapeType).toBe('device-macbook');
+    expect(seg.media.metadata?.name).toBe('MacBook Showcase');
+  });
+
+  it('synthesizes and appends procedural audio SFX', () => {
+    const sfxId = useStore.getState().addSfxSegment('whoosh');
+    expect(sfxId).toBeTruthy();
+    const seg = useStore.getState().segments.get(sfxId)!;
+    expect(seg.type).toBe('audio');
+    expect(seg.media.url.startsWith('data:audio/wav;base64,')).toBe(true);
+  });
+
+  it('applies cinematic color grading presets', () => {
+    const id = useStore.getState().addMediaToTimeline('m1')!;
+    useStore.getState().setSelectedSegment(id);
+    useStore.getState().applyColorPreset('teal-orange');
+    const seg = useStore.getState().segments.get(id)!;
+    expect(seg.colorGrade?.temperature).toBe(15);
+    expect(seg.colorGrade?.tint).toBe(-5);
+    expect(seg.colorGrade?.lift?.b).toBe(1.15);
+  });
 });

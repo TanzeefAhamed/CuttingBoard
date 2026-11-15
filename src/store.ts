@@ -6,6 +6,7 @@ import { createSegment, splitSegment as coreSplitSegment } from './core/timeline
 import type { Segment, TrackType } from './core/timeline/segment';
 import { createTrack } from './core/timeline/track';
 import type { Track } from './core/timeline/track';
+import { generateSfx, type SfxType } from './editor/sfxGenerator';
 
 /* ------------------------------------------------------------------ types */
 
@@ -58,10 +59,16 @@ interface Snapshot {
 
 interface AppState {
   /* UI */
+  projectName: string;
+  setProjectName: (name: string) => void;
   activePane: PaneId;
   setActivePane: (pane: PaneId) => void;
-  activeSidebarTab: 'media' | 'captions';
-  setActiveSidebarTab: (tab: 'media' | 'captions') => void;
+  activeSidebarTab: 'media' | 'text' | 'elements' | 'effects' | 'audio' | 'captions';
+  setActiveSidebarTab: (tab: 'media' | 'text' | 'elements' | 'effects' | 'audio' | 'captions') => void;
+  activeTool: 'select' | 'razor' | 'hand';
+  setActiveTool: (tool: 'select' | 'razor' | 'hand') => void;
+  rippleEnabled: boolean;
+  setRippleEnabled: (v: boolean) => void;
   paneSizes: Record<string, number>;
   setPaneSizes: (sizes: Record<string, number>) => void;
   theme: 'light' | 'dark' | 'system';
@@ -113,6 +120,9 @@ interface AppState {
   splitAtPlayhead: () => boolean;
   duplicateSegment: (segmentId: string) => string | null;
   addTextSegment: (text?: string, opts?: { trackId?: string; start?: Microseconds; duration?: Microseconds }) => string;
+  addShapeSegment: (shapeType?: string, label?: string) => string;
+  addSfxSegment: (sfxType: SfxType) => string;
+  applyColorPreset: (preset: 'teal-orange' | 'vintage' | 'cyberpunk' | 'noir' | 'crisp') => void;
   updateSegmentText: (segmentId: string, text: string) => void;
   reorderTrack: (trackId: string, direction: 'up' | 'down') => void;
   deleteSelected: () => void;
@@ -187,10 +197,16 @@ export const useStore = create<AppState>()(
 
       return {
         /* UI */
+        projectName: 'New Project',
+        setProjectName: (name) => set({ projectName: name }),
         activePane: 'viewport',
         setActivePane: (pane) => set({ activePane: pane }),
         activeSidebarTab: 'media',
         setActiveSidebarTab: (tab) => set({ activeSidebarTab: tab }),
+        activeTool: 'select',
+        setActiveTool: (tool) => set({ activeTool: tool }),
+        rippleEnabled: false,
+        setRippleEnabled: (v) => set({ rippleEnabled: v }),
         paneSizes: { 'media-browser': 280, inspector: 300, timeline: 260 },
         setPaneSizes: (sizes) => set({ paneSizes: sizes }),
         theme: 'system',
@@ -407,6 +423,161 @@ export const useStore = create<AppState>()(
             selectedSegment: id,
           });
           return id;
+        },
+        addShapeSegment: (shapeType = 'rectangle', label) => {
+          pushHistory();
+          let tracks = get().tracks;
+          let track = tracks.find((t) => t.type === 'video' && !t.locked);
+          if (!track) {
+            track = createTrack({
+              id: `track-${crypto.randomUUID().slice(0, 8)}`,
+              name: `Video ${tracks.filter((t) => t.type === 'video').length + 1}`,
+              type: 'video',
+              order: tracks.length,
+            });
+            tracks = [...tracks, track];
+          }
+
+          const duration = µs(4_000_000n);
+          const start = get().playhead;
+          const id = `seg-${crypto.randomUUID().slice(0, 8)}`;
+          const segment = createSegment({
+            id,
+            trackId: track.id,
+            type: 'video',
+            targetStart: new TimePoint(start),
+            targetDuration: duration,
+            sourceStart: TimePoint.zero(),
+            sourceDuration: duration,
+            media: {
+              id: `media-${id}`,
+              type: 'shape' as any,
+              url: 'data:text/plain;shape,' + shapeType,
+              duration,
+              metadata: {
+                name: label || (shapeType.charAt(0).toUpperCase() + shapeType.slice(1)),
+                shapeType,
+                color: shapeType.includes('device') ? '#1e293b' : '#3b82f6',
+                strokeColor: '#ffffff',
+              },
+            },
+          });
+
+          const next = new Map(get().segments);
+          next.set(id, segment);
+          set({
+            tracks,
+            segments: next,
+            selectedSegment: id,
+          });
+          return id;
+        },
+        addSfxSegment: (sfxType) => {
+          pushHistory();
+          const sfx = generateSfx(sfxType);
+          const durUs = BigInt(Math.round(sfx.durationSec * 1_000_000)) as Microseconds;
+          const sfxItem: MediaItem = {
+            id: `sfx-${crypto.randomUUID().slice(0, 8)}`,
+            name: `SFX ${sfxType.charAt(0).toUpperCase() + sfxType.slice(1)}`,
+            type: 'audio',
+            url: sfx.url,
+            duration: sfx.durationSec,
+            createdAt: Date.now(),
+          };
+
+          let tracks = get().tracks;
+          let track = tracks.find((t) => t.type === 'audio' && !t.locked);
+          if (!track) {
+            track = createTrack({
+              id: `track-${crypto.randomUUID().slice(0, 8)}`,
+              name: `Audio ${tracks.filter((t) => t.type === 'audio').length + 1}`,
+              type: 'audio',
+              order: tracks.length,
+            });
+            tracks = [...tracks, track];
+          }
+
+          const start = get().playhead;
+          const id = `seg-${crypto.randomUUID().slice(0, 8)}`;
+          const segment = createSegment({
+            id,
+            trackId: track.id,
+            type: 'audio',
+            targetStart: new TimePoint(start),
+            targetDuration: durUs,
+            sourceStart: TimePoint.zero(),
+            sourceDuration: durUs,
+            media: sfxItem,
+          });
+
+          const next = new Map(get().segments);
+          next.set(id, segment);
+          set({
+            mediaItems: [...get().mediaItems, sfxItem],
+            tracks,
+            segments: next,
+            selectedSegment: id,
+          });
+          return id;
+        },
+        applyColorPreset: (preset) => {
+          const selId = get().selectedSegment;
+          if (!selId) return;
+          const seg = get().segments.get(selId);
+          if (!seg) return;
+          pushHistory();
+
+          let lift = { r: 1, g: 1, b: 1, master: 1 };
+          let gamma = { r: 1, g: 1, b: 1, master: 1 };
+          let gain = { r: 1, g: 1, b: 1, master: 1 };
+          let temperature = 0;
+          let tint = 0;
+
+          if (preset === 'teal-orange') {
+            lift = { r: 0.9, g: 1.0, b: 1.15, master: 1 };
+            gamma = { r: 1.05, g: 0.98, b: 0.9, master: 1 };
+            gain = { r: 1.2, g: 1.05, b: 0.85, master: 1 };
+            temperature = 15;
+            tint = -5;
+          } else if (preset === 'vintage') {
+            lift = { r: 1.1, g: 1.0, b: 0.85, master: 1 };
+            gamma = { r: 1.0, g: 1.05, b: 0.95, master: 1 };
+            gain = { r: 1.05, g: 0.95, b: 0.8, master: 1 };
+            temperature = 25;
+            tint = 10;
+          } else if (preset === 'cyberpunk') {
+            lift = { r: 0.8, g: 0.85, b: 1.3, master: 1 };
+            gamma = { r: 1.2, g: 0.8, b: 1.1, master: 1 };
+            gain = { r: 1.1, g: 1.25, b: 0.9, master: 1 };
+            temperature = -20;
+            tint = 25;
+          } else if (preset === 'noir') {
+            lift = { r: 0.8, g: 0.8, b: 0.8, master: 0.8 };
+            gamma = { r: 1.1, g: 1.1, b: 1.1, master: 1.1 };
+            gain = { r: 1.2, g: 1.2, b: 1.2, master: 1.2 };
+            temperature = 0;
+            tint = 0;
+          } else if (preset === 'crisp') {
+            lift = { r: 0.95, g: 0.95, b: 0.95, master: 0.95 };
+            gamma = { r: 1.0, g: 1.0, b: 1.0, master: 1.0 };
+            gain = { r: 1.1, g: 1.1, b: 1.1, master: 1.1 };
+            temperature = -5;
+            tint = 0;
+          }
+
+          const next = new Map(get().segments);
+          next.set(selId, {
+            ...seg,
+            colorGrade: {
+              ...seg.colorGrade,
+              lift,
+              gamma,
+              gain,
+              temperature,
+              tint,
+            },
+          });
+          set({ segments: next });
         },
         updateSegmentText: (segmentId, text) => {
           const seg = get().segments.get(segmentId);

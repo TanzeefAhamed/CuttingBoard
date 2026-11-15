@@ -290,6 +290,71 @@ export async function renderWebGLFrame(
       sourceDrawable = textCanvas;
       sw = 1920;
       sh = 1080;
+    } else if (s.media.type === 'shape') {
+      const shapeType = (s.media.metadata?.shapeType as string) || 'rectangle';
+      const color = (s.media.metadata?.color as string) || '#3b82f6';
+      const strokeColor = (s.media.metadata?.strokeColor as string) || '#ffffff';
+      const shapeCanvas = document.createElement('canvas');
+      shapeCanvas.width = 1920;
+      shapeCanvas.height = 1080;
+      const sCtx = shapeCanvas.getContext('2d')!;
+      sCtx.clearRect(0, 0, 1920, 1080);
+      sCtx.fillStyle = color;
+      sCtx.strokeStyle = strokeColor;
+      sCtx.lineWidth = 8;
+
+      if (shapeType === 'circle') {
+        sCtx.beginPath();
+        sCtx.arc(960, 540, 240, 0, Math.PI * 2);
+        sCtx.fill();
+        sCtx.stroke();
+      } else if (shapeType === 'arrow') {
+        sCtx.beginPath();
+        sCtx.moveTo(760, 480);
+        sCtx.lineTo(1060, 480);
+        sCtx.lineTo(1060, 400);
+        sCtx.lineTo(1200, 540);
+        sCtx.lineTo(1060, 680);
+        sCtx.lineTo(1060, 600);
+        sCtx.lineTo(760, 600);
+        sCtx.closePath();
+        sCtx.fill();
+        sCtx.stroke();
+      } else if (shapeType === 'device-macbook') {
+        sCtx.fillStyle = '#1e293b';
+        sCtx.beginPath();
+        sCtx.roundRect(560, 280, 800, 500, 16);
+        sCtx.fill();
+        sCtx.strokeStyle = '#64748b';
+        sCtx.stroke();
+        sCtx.fillStyle = '#0f172a';
+        sCtx.fillRect(590, 310, 740, 440);
+        sCtx.fillStyle = '#334155';
+        sCtx.beginPath();
+        sCtx.roundRect(500, 780, 920, 24, [0, 0, 12, 12]);
+        sCtx.fill();
+        sCtx.fillStyle = '#64748b';
+        sCtx.fillRect(920, 780, 80, 6);
+      } else if (shapeType === 'device-iphone') {
+        sCtx.fillStyle = '#0f172a';
+        sCtx.beginPath();
+        sCtx.roundRect(800, 200, 320, 680, 44);
+        sCtx.fill();
+        sCtx.strokeStyle = '#475569';
+        sCtx.stroke();
+        sCtx.fillStyle = '#000';
+        sCtx.beginPath();
+        sCtx.roundRect(915, 220, 90, 26, 13);
+        sCtx.fill();
+      } else {
+        sCtx.beginPath();
+        sCtx.roundRect(660, 360, 600, 360, 24);
+        sCtx.fill();
+        sCtx.stroke();
+      }
+      sourceDrawable = shapeCanvas;
+      sw = 1920;
+      sh = 1080;
     }
 
     if (!sourceDrawable) continue;
