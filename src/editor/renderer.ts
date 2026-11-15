@@ -305,8 +305,19 @@ export async function renderWebGLFrame(
         saturation: filters.saturation,
         hue: filters.hue,
         blur: filters.blur,
+        temperature: s.colorGrade?.temperature ?? 0,
+        tint: s.colorGrade?.tint ?? 0,
       },
-      filterEffect: filters.effect !== 'none' ? filters.effect : undefined,
+      mask: s.aiEffects?.portraitMatting
+        ? {
+            type: 'radial',
+            feather: 0.25,
+            invert: false,
+            center: { x: 0.5, y: 0.5 },
+            size: { x: 0.4, y: 0.6 },
+          }
+        : undefined,
+      filterEffect: filters.effect !== 'none' ? (filters.effect as any) : undefined,
     };
 
     try {

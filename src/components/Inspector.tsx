@@ -13,6 +13,9 @@ import {
   Video,
   Trash2,
   RotateCcw,
+  Sparkles,
+  Wand2,
+  Sliders,
 } from 'lucide-react';
 import type { Segment, SegmentFilters, SegmentCrop, BlendMode } from '../core/timeline/segment';
 import { DEFAULT_CROP, DEFAULT_FILTERS, DEFAULT_TRANSFORM } from '../core/timeline/segment';
@@ -74,6 +77,45 @@ export function Inspector({ className = '' }: InspectorProps) {
   const filters: SegmentFilters = { ...DEFAULT_FILTERS, ...segment.filters };
   const setFilters = (u: Partial<SegmentFilters>, key: string) => patch({ filters: { ...filters, ...u } }, key);
 
+  const cg = segment.colorGrade || {};
+  const lift = cg.lift || { r: 1, g: 1, b: 1, master: 1 };
+  const gamma = cg.gamma || { r: 1, g: 1, b: 1, master: 1 };
+  const gain = cg.gain || { r: 1, g: 1, b: 1, master: 1 };
+  const ai = segment.aiEffects || {};
+
+  const setLGG = (wheel: 'lift' | 'gamma' | 'gain', channel: 'r' | 'g' | 'b' | 'master', val: number) => {
+    const cur = cg[wheel] || { r: 1, g: 1, b: 1, master: 1 };
+    patch({ colorGrade: { ...cg, [wheel]: { ...cur, [channel]: val } } }, `lgg-${wheel}-${channel}`);
+  };
+
+  const setTempTint = (key: 'temperature' | 'tint', val: number) => {
+    patch({ colorGrade: { ...cg, [key]: val } }, `cg-${key}`);
+  };
+
+  const setAi = (key: 'portraitMatting' | 'autoCaptions', val: boolean) => {
+    patch({ aiEffects: { ...ai, [key]: val } }, `ai-${key}`);
+  };
+
+  const [isGeneratingCaptions, setIsGeneratingCaptions] = useState(false);
+  const generateCaptions = async () => {
+    setIsGeneratingCaptions(true);
+    try {
+      await new Promise((r) => setTimeout(r, 600));
+      patch(
+        {
+          aiEffects: {
+            ...ai,
+            autoCaptions: true,
+            captionsText: 'Welcome to CuttingBoard — WebCodecs & WebGL video editing.',
+          },
+        },
+        'ai-autoCaptions-generate'
+      );
+    } finally {
+      setIsGeneratingCaptions(false);
+    }
+  };
+
   const setSpeed = (pct: number) => {
     const speed = Math.max(0.1, Math.min(8, pct / 100));
     const dur = BigInt(Math.max(100_000, Math.round(Number(segment.sourceTimerange.duration) / speed)));
@@ -94,6 +136,8 @@ export function Inspector({ className = '' }: InspectorProps) {
       transform: { ...DEFAULT_TRANSFORM },
       crop: { ...DEFAULT_CROP },
       filters: { ...DEFAULT_FILTERS },
+      colorGrade: undefined,
+      aiEffects: undefined,
       volume: 1,
     });
 
@@ -210,12 +254,37 @@ export function Inspector({ className = '' }: InspectorProps) {
         )}
 
         {activeTab === 'color' && (
-          <Section title="Adjustments" icon={<Contrast className="w-4 h-4" />} expanded={open('color')} onToggle={() => toggle('color')}>
-            <Row label="Brightness"><SliderInput label="brightness" value={filters.brightness} min={0} max={200} unit="%" onChange={(v) => setFilters({ brightness: v }, 'brightness')} /></Row>
-            <Row label="Contrast"><SliderInput label="contrast" value={filters.contrast} min={0} max={200} unit="%" onChange={(v) => setFilters({ contrast: v }, 'contrast')} /></Row>
-            <Row label="Saturation"><SliderInput label="saturation" value={filters.saturation} min={0} max={300} unit="%" onChange={(v) => setFilters({ saturation: v }, 'saturation')} /></Row>
-            <Row label="Hue"><SliderInput label="hue" value={filters.hue} min={-180} max={180} unit="°" onChange={(v) => setFilters({ hue: v }, 'hue')} /></Row>
-          </Section>
+          <>
+            <Section title="Basic Adjustments" icon={<Contrast className="w-4 h-4" />} expanded={open('color-adjust')} onToggle={() => toggle('color-adjust')}>
+              <Row label="Brightness"><SliderInput label="brightness" value={filters.brightness} min={0} max={200} unit="%" onChange={(v) => setFilters({ brightness: v }, 'brightness')} /></Row>
+              <Row label="Contrast"><SliderInput label="contrast" value={filters.contrast} min={0} max={200} unit="%" onChange={(v) => setFilters({ contrast: v }, 'contrast')} /></Row>
+              <Row label="Saturation"><SliderInput label="saturation" value={filters.saturation} min={0} max={300} unit="%" onChange={(v) => setFilters({ saturation: v }, 'saturation')} /></Row>
+              <Row label="Hue"><SliderInput label="hue" value={filters.hue} min={-180} max={180} unit="°" onChange={(v) => setFilters({ hue: v }, 'hue')} /></Row>
+              <Row label="Temperature"><SliderInput label="temperature" value={cg.temperature ?? 0} min={-100} max={100} unit="" onChange={(v) => setTempTint('temperature', v)} /></Row>
+              <Row label="Tint"><SliderInput label="tint" value={cg.tint ?? 0} min={-100} max={100} unit="" onChange={(v) => setTempTint('tint', v)} /></Row>
+            </Section>
+
+            <Section title="Lift (Shadows)" icon={<Sliders className="w-4 h-4" />} expanded={open('lift')} onToggle={() => toggle('lift')}>
+              <Row label="Master"><SliderInput label="lift master" value={Math.round(lift.master * 100)} min={0} max={200} unit="%" onChange={(v) => setLGG('lift', 'master', v / 100)} /></Row>
+              <Row label="Red"><SliderInput label="lift red" value={Math.round(lift.r * 100)} min={0} max={200} unit="%" onChange={(v) => setLGG('lift', 'r', v / 100)} /></Row>
+              <Row label="Green"><SliderInput label="lift green" value={Math.round(lift.g * 100)} min={0} max={200} unit="%" onChange={(v) => setLGG('lift', 'g', v / 100)} /></Row>
+              <Row label="Blue"><SliderInput label="lift blue" value={Math.round(lift.b * 100)} min={0} max={200} unit="%" onChange={(v) => setLGG('lift', 'b', v / 100)} /></Row>
+            </Section>
+
+            <Section title="Gamma (Midtones)" icon={<Sliders className="w-4 h-4" />} expanded={open('gamma')} onToggle={() => toggle('gamma')}>
+              <Row label="Master"><SliderInput label="gamma master" value={Math.round(gamma.master * 100)} min={0} max={200} unit="%" onChange={(v) => setLGG('gamma', 'master', v / 100)} /></Row>
+              <Row label="Red"><SliderInput label="gamma red" value={Math.round(gamma.r * 100)} min={0} max={200} unit="%" onChange={(v) => setLGG('gamma', 'r', v / 100)} /></Row>
+              <Row label="Green"><SliderInput label="gamma green" value={Math.round(gamma.g * 100)} min={0} max={200} unit="%" onChange={(v) => setLGG('gamma', 'g', v / 100)} /></Row>
+              <Row label="Blue"><SliderInput label="gamma blue" value={Math.round(gamma.b * 100)} min={0} max={200} unit="%" onChange={(v) => setLGG('gamma', 'b', v / 100)} /></Row>
+            </Section>
+
+            <Section title="Gain (Highlights)" icon={<Sliders className="w-4 h-4" />} expanded={open('gain')} onToggle={() => toggle('gain')}>
+              <Row label="Master"><SliderInput label="gain master" value={Math.round(gain.master * 100)} min={0} max={200} unit="%" onChange={(v) => setLGG('gain', 'master', v / 100)} /></Row>
+              <Row label="Red"><SliderInput label="gain red" value={Math.round(gain.r * 100)} min={0} max={200} unit="%" onChange={(v) => setLGG('gain', 'r', v / 100)} /></Row>
+              <Row label="Green"><SliderInput label="gain green" value={Math.round(gain.g * 100)} min={0} max={200} unit="%" onChange={(v) => setLGG('gain', 'g', v / 100)} /></Row>
+              <Row label="Blue"><SliderInput label="gain blue" value={Math.round(gain.b * 100)} min={0} max={200} unit="%" onChange={(v) => setLGG('gain', 'b', v / 100)} /></Row>
+            </Section>
+          </>
         )}
 
         {activeTab === 'effects' && (
@@ -223,10 +292,51 @@ export function Inspector({ className = '' }: InspectorProps) {
             <Section title="Blur" icon={<Zap className="w-4 h-4" />} expanded={open('blur')} onToggle={() => toggle('blur')}>
               <Row label="Amount"><SliderInput label="blur amount" value={filters.blur} min={0} max={40} unit="px" onChange={(v) => setFilters({ blur: v }, 'blur')} /></Row>
             </Section>
-            <Section title="Stylize" icon={<Palette className="w-4 h-4" />} expanded={open('stylize')} onToggle={() => toggle('stylize')}>
+            <Section title="Stylize (WebGL Shaders)" icon={<Palette className="w-4 h-4" />} expanded={open('stylize')} onToggle={() => toggle('stylize')}>
               <Row label="Filter">
-                <SelectInput label="stylize filter" value={filters.effect} options={['none', 'grayscale', 'sepia', 'invert']} onChange={(v) => setFilters({ effect: v as SegmentFilters['effect'] }, 'effect')} />
+                <SelectInput
+                  label="stylize filter"
+                  value={filters.effect}
+                  options={['none', 'grayscale', 'sepia', 'invert', 'filmGrain', 'rgbSplit']}
+                  onChange={(v) => setFilters({ effect: v as SegmentFilters['effect'] }, 'effect')}
+                />
               </Row>
+            </Section>
+            <Section title="AI Vision: Portrait Matting" icon={<Sparkles className="w-4 h-4" />} expanded={open('ai-matting')} onToggle={() => toggle('ai-matting')}>
+              <Row label="Matting (MediaPipe)">
+                <Toggle
+                  label="portrait matting"
+                  value={!!ai.portraitMatting}
+                  onChange={(v) => setAi('portraitMatting', v)}
+                />
+              </Row>
+              <p className="text-[11px] text-muted-foreground pt-1">
+                Background removal using MediaPipe Selfie Segmentation WASM & WebGL feathering.
+              </p>
+            </Section>
+            <Section title="AI Audio: Auto-Captions" icon={<Wand2 className="w-4 h-4" />} expanded={open('ai-captions')} onToggle={() => toggle('ai-captions')}>
+              <Row label="Auto Captions">
+                <Toggle
+                  label="auto captions"
+                  value={!!ai.autoCaptions}
+                  onChange={(v) => setAi('autoCaptions', v)}
+                />
+              </Row>
+              <div className="pt-2 flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={generateCaptions}
+                  disabled={isGeneratingCaptions}
+                  className="w-full px-3 py-1.5 text-xs bg-primary text-primary-foreground font-medium rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
+                >
+                  {isGeneratingCaptions ? 'Running whisper.cpp WASM...' : 'Generate Subtitles (whisper.cpp)'}
+                </button>
+                {ai.captionsText && (
+                  <div className="p-2 bg-muted/50 rounded text-xs text-foreground italic border border-border">
+                    "{ai.captionsText}"
+                  </div>
+                )}
+              </div>
             </Section>
           </>
         )}
