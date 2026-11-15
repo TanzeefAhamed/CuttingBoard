@@ -63,4 +63,41 @@ describe('editor store wiring', () => {
     for (let i = 0; i < 5; i++) useStore.getState().updateSegment(id, { volume: i / 10 }, 'volume');
     expect(useStore.getState().past.length).toBe(before + 1);
   });
+
+  it('duplicates segments seamlessly', () => {
+    const id = useStore.getState().addMediaToTimeline('m1')!;
+    const dupId = useStore.getState().duplicateSegment(id);
+    expect(dupId).toBeTruthy();
+    const segs = useStore.getState().segments;
+    expect(segs.size).toBe(2);
+    const orig = segs.get(id)!;
+    const dup = segs.get(dupId!)!;
+    expect(dup.targetTimerange.start.value).toBe(orig.targetTimerange.start.value + orig.targetTimerange.duration);
+    expect(dup.targetTimerange.duration).toBe(orig.targetTimerange.duration);
+    expect(useStore.getState().selectedSegment).toBe(dupId);
+  });
+
+  it('creates and updates text segments', () => {
+    const textId = useStore.getState().addTextSegment('Initial Subtitle');
+    expect(textId).toBeTruthy();
+    const seg = useStore.getState().segments.get(textId)!;
+    expect(seg.type).toBe('text');
+    expect(seg.media.metadata?.text).toBe('Initial Subtitle');
+
+    useStore.getState().updateSegmentText(textId, 'Updated Headline');
+    const updated = useStore.getState().segments.get(textId)!;
+    expect(updated.media.metadata?.text).toBe('Updated Headline');
+  });
+
+  it('reorders tracks up and down', () => {
+    const t0 = useStore.getState().tracks[0]!.id;
+    const t1 = useStore.getState().tracks[1]!.id;
+    useStore.getState().reorderTrack(t1, 'up');
+    expect(useStore.getState().tracks[0]!.id).toBe(t1);
+    expect(useStore.getState().tracks[1]!.id).toBe(t0);
+
+    useStore.getState().reorderTrack(t1, 'down');
+    expect(useStore.getState().tracks[0]!.id).toBe(t0);
+    expect(useStore.getState().tracks[1]!.id).toBe(t1);
+  });
 });

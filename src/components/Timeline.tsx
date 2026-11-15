@@ -1,6 +1,19 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useStore } from '../store';
-import { Volume2, VolumeX, Trash2, Scissors, ZoomIn, ZoomOut, Plus } from 'lucide-react';
+import {
+  Volume2,
+  VolumeX,
+  Trash2,
+  Scissors,
+  ZoomIn,
+  ZoomOut,
+  Plus,
+  ChevronUp,
+  ChevronDown,
+  Copy,
+  Settings,
+  Type,
+} from 'lucide-react';
 import type { Microseconds } from '../core/timeline/types';
 import { MEDIA_DRAG_TYPE } from './MediaBrowser';
 
@@ -57,6 +70,12 @@ export function Timeline({ className = '' }: { className?: string }) {
   const removeTrack = useStore((s) => s.removeTrack);
   const addTrackOfType = useStore((s) => s.addTrackOfType);
   const splitAtPlayhead = useStore((s) => s.splitAtPlayhead);
+  const duplicateSegment = useStore((s) => s.duplicateSegment);
+  const removeSegment = useStore((s) => s.removeSegment);
+  const setSelectedSegment = useStore((s) => s.setSelectedSegment);
+  const setActivePane = useStore((s) => s.setActivePane);
+  const reorderTrack = useStore((s) => s.reorderTrack);
+  const addTextSegment = useStore((s) => s.addTextSegment);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rulerRef = useRef<HTMLCanvasElement>(null);
@@ -66,6 +85,18 @@ export function Timeline({ className = '' }: { className?: string }) {
   const [hovered, setHovered] = useState<string | null>(null);
   const [dropHint, setDropHint] = useState<{ x: number; track: number } | null>(null);
   const [viewW, setViewW] = useState(800);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    segmentId: string | null;
+  } | null>(null);
+
+  // Close context menu on global click/contextmenu outside
+  useEffect(() => {
+    const handleClose = () => setContextMenu(null);
+    window.addEventListener('click', handleClose);
+    return () => window.removeEventListener('click', handleClose);
+  }, []);
 
   // ------------------------------------------------------------- geometry
   const durationUs = (() => {
@@ -419,7 +450,32 @@ export function Timeline({ className = '' }: { className?: string }) {
     const { x, y } = canvasPoint(e.clientX, e.clientY);
     const ti = Math.floor(y / TRACK_HEIGHT);
     const start = snapUs(pxToUs(Math.max(0, x), st.zoom));
-    st.addMediaToTimeline(id, { trackId: st.tracks[ti]?.id, start: start as Microseconds });
+    let targetTrackId = st.tracks[ti]?.id;
+    if (!targetTrackId) {
+      const item = st.mediaItems.find((m) => m.id === id);
+      targetTrackId = st.addTrackOfType(item?.type === 'audio' ? 'audio' : 'video');
+    }
+    st.addMediaToTimeline(id, { trackId: targetTrackId, start: start as Microseconds });
+  };
+
+  const onCanvasContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const { x, y } = canvasPoint(e.clientX, e.clientY);
+    const hit = hitTest(x, y);
+    if (hit) {
+      setSelectedSegment(hit.id);
+      setContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        segmentId: hit.id,
+      });
+    } else {
+      setContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        segmentId: null,
+      });
+    }
   };
 
   // ------------------------------------------------------------------ view
@@ -427,20 +483,27 @@ export function Timeline({ className = '' }: { className?: string }) {
     <div className={`flex flex-col h-full bg-slate-900 ${className}`} data-testid="timeline">
       {/* Ruler row */}
       <div className="flex flex-shrink-0 border-b border-border" style={{ height: RULER_HEIGHT }}>
-        <div className="w-40 flex-shrink-0 bg-card border-r border-border flex items-center gap-1 px-2">
+        <div className="w-40 flex-shrink-0 bg-card border-r border-border flex items-center gap-1 px-1.5 overflow-x-auto">
           <button
-            className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded bg-muted hover:bg-accent"
+            className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded bg-muted hover:bg-accent font-medium"
             title="Add video track"
             onClick={() => addTrackOfType('video')}
           >
             <Plus className="w-3 h-3" /> Video
           </button>
           <button
-            className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded bg-muted hover:bg-accent"
+            className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded bg-muted hover:bg-accent font-medium"
             title="Add audio track"
             onClick={() => addTrackOfType('audio')}
           >
             <Plus className="w-3 h-3" /> Audio
+          </button>
+          <button
+            className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded bg-muted hover:bg-accent font-medium"
+            title="Add text track"
+            onClick={() => addTrackOfType('text')}
+          >
+            <Plus className="w-3 h-3" /> Text
           </button>
         </div>
         <div ref={rulerWrapRef} className="flex-1 overflow-hidden cursor-pointer" onMouseDown={onRulerMouseDown}>
@@ -470,21 +533,39 @@ export function Timeline({ className = '' }: { className?: string }) {
                     {track.type} · {count} clip{count === 1 ? '' : 's'}
                   </div>
                 </div>
-                <div className="flex flex-col gap-0.5">
-                  <button
-                    className="p-0.5 rounded hover:bg-accent"
-                    title={track.muted ? 'Unmute track' : 'Mute track'}
-                    onClick={() => updateTrack(track.id, { muted: !track.muted })}
-                  >
-                    {track.muted ? <VolumeX className="w-3 h-3 text-destructive" /> : <Volume2 className="w-3 h-3" />}
-                  </button>
-                  <button
-                    className="p-0.5 rounded hover:bg-accent text-destructive"
-                    title="Delete track"
-                    onClick={() => removeTrack(track.id)}
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
+                <div className="flex items-center gap-0.5">
+                  <div className="flex flex-col">
+                    <button
+                      className="p-0.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
+                      title="Move track up"
+                      onClick={() => reorderTrack(track.id, 'up')}
+                    >
+                      <ChevronUp className="w-2.5 h-2.5" />
+                    </button>
+                    <button
+                      className="p-0.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
+                      title="Move track down"
+                      onClick={() => reorderTrack(track.id, 'down')}
+                    >
+                      <ChevronDown className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    <button
+                      className="p-0.5 rounded hover:bg-accent"
+                      title={track.muted ? 'Unmute track' : 'Mute track'}
+                      onClick={() => updateTrack(track.id, { muted: !track.muted })}
+                    >
+                      {track.muted ? <VolumeX className="w-3 h-3 text-destructive" /> : <Volume2 className="w-3 h-3" />}
+                    </button>
+                    <button
+                      className="p-0.5 rounded hover:bg-accent text-destructive"
+                      title="Delete track"
+                      onClick={() => removeTrack(track.id)}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
                 </div>
               </div>
             );
@@ -509,6 +590,7 @@ export function Timeline({ className = '' }: { className?: string }) {
             onMouseDown={onCanvasMouseDown}
             onMouseMove={onCanvasMouseMove}
             onMouseLeave={() => setHovered(null)}
+            onContextMenu={onCanvasContextMenu}
           />
           {segments.size === 0 && (
             <div className="absolute left-4 top-4 text-xs text-muted-foreground pointer-events-none">
@@ -534,6 +616,118 @@ export function Timeline({ className = '' }: { className?: string }) {
           </button>
         </span>
       </div>
+
+      {/* Floating Context Menu */}
+      {contextMenu && (
+        <div
+          data-testid="timeline-context-menu"
+          className="fixed z-50 min-w-[160px] bg-popover text-popover-foreground border border-border rounded-md shadow-lg py-1 text-xs select-none"
+          style={{
+            left: Math.min(window.innerWidth - 180, contextMenu.x),
+            top: Math.min(window.innerHeight - 180, contextMenu.y),
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {contextMenu.segmentId ? (
+            <>
+              <button
+                data-testid="context-menu-split"
+                className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent hover:text-accent-foreground text-left"
+                onClick={() => {
+                  splitAtPlayhead();
+                  setContextMenu(null);
+                }}
+              >
+                <span className="flex items-center gap-2">
+                  <Scissors className="w-3.5 h-3.5" /> Split at Playhead
+                </span>
+                <span className="text-[10px] text-muted-foreground font-mono">Ctrl+B</span>
+              </button>
+              <button
+                data-testid="context-menu-duplicate"
+                className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent hover:text-accent-foreground text-left"
+                onClick={() => {
+                  if (contextMenu.segmentId) duplicateSegment(contextMenu.segmentId);
+                  setContextMenu(null);
+                }}
+              >
+                <span className="flex items-center gap-2">
+                  <Copy className="w-3.5 h-3.5" /> Duplicate
+                </span>
+                <span className="text-[10px] text-muted-foreground font-mono">Ctrl+D</span>
+              </button>
+              <button
+                data-testid="context-menu-properties"
+                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-accent hover:text-accent-foreground text-left"
+                onClick={() => {
+                  setActivePane('inspector');
+                  setContextMenu(null);
+                }}
+              >
+                <Settings className="w-3.5 h-3.5" /> Properties (Inspector)
+              </button>
+              <div className="h-px bg-border my-1" />
+              <button
+                data-testid="context-menu-delete"
+                className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-destructive hover:text-destructive-foreground text-destructive text-left"
+                onClick={() => {
+                  if (contextMenu.segmentId) removeSegment(contextMenu.segmentId);
+                  setContextMenu(null);
+                }}
+              >
+                <span className="flex items-center gap-2">
+                  <Trash2 className="w-3.5 h-3.5" /> Delete
+                </span>
+                <span className="text-[10px] font-mono">Del</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                data-testid="context-menu-add-video"
+                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-accent hover:text-accent-foreground text-left"
+                onClick={() => {
+                  addTrackOfType('video');
+                  setContextMenu(null);
+                }}
+              >
+                <Plus className="w-3.5 h-3.5" /> Add Video Track
+              </button>
+              <button
+                data-testid="context-menu-add-audio"
+                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-accent hover:text-accent-foreground text-left"
+                onClick={() => {
+                  addTrackOfType('audio');
+                  setContextMenu(null);
+                }}
+              >
+                <Plus className="w-3.5 h-3.5" /> Add Audio Track
+              </button>
+              <button
+                data-testid="context-menu-add-text"
+                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-accent hover:text-accent-foreground text-left"
+                onClick={() => {
+                  addTrackOfType('text');
+                  setContextMenu(null);
+                }}
+              >
+                <Plus className="w-3.5 h-3.5" /> Add Text Track
+              </button>
+              <div className="h-px bg-border my-1" />
+              <button
+                data-testid="context-menu-add-sample-text"
+                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-accent hover:text-accent-foreground text-left"
+                onClick={() => {
+                  addTextSegment('Title Text');
+                  setContextMenu(null);
+                }}
+              >
+                <Type className="w-3.5 h-3.5" /> Insert Text at Playhead
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

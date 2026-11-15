@@ -56,11 +56,16 @@ export interface LUT3D {
 
 /** Complete color grading configuration */
 export interface ColorGradeConfig {
-  lgg: LGGParams;
-  hsl: HSLParams;
-  curves: CurveParams;
+  lgg?: LGGParams;
+  hsl?: HSLParams;
+  curves?: CurveParams;
   lut3d?: LUT3D;
-  enabled: boolean;
+  enabled?: boolean;
+  lift?: LGGParams['lift'];
+  gamma?: LGGParams['gamma'];
+  gain?: LGGParams['gain'];
+  temperature?: number;
+  tint?: number;
 }
 
 /** Default color grading config (identity/no-op) */

@@ -270,6 +270,26 @@ export async function renderWebGLFrame(
         sw = (el as HTMLImageElement).naturalWidth || 1920;
         sh = (el as HTMLImageElement).naturalHeight || 1080;
       }
+    } else if (s.media.type === 'text') {
+      const text = (s.media.metadata?.text as string) || 'Sample Text';
+      const fontSize = (s.media.metadata?.fontSize as number) || 44;
+      const color = (s.media.metadata?.color as string) || '#ffffff';
+      const textCanvas = document.createElement('canvas');
+      textCanvas.width = 1920;
+      textCanvas.height = 1080;
+      const tCtx = textCanvas.getContext('2d')!;
+      tCtx.clearRect(0, 0, 1920, 1080);
+      tCtx.font = `bold ${fontSize * 1.8}px "Inter", sans-serif`;
+      tCtx.textAlign = 'center';
+      tCtx.textBaseline = 'middle';
+      tCtx.lineWidth = 6;
+      tCtx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+      tCtx.strokeText(text, 960, 540);
+      tCtx.fillStyle = color;
+      tCtx.fillText(text, 960, 540);
+      sourceDrawable = textCanvas;
+      sw = 1920;
+      sh = 1080;
     }
 
     if (!sourceDrawable) continue;

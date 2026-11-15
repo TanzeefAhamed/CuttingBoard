@@ -14,12 +14,22 @@ export default defineConfig({
     sourcemap: true,
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom', 'zustand'],
-          ui: ['@radix-ui/react-tabs', '@radix-ui/react-dropdown-menu', '@radix-ui/react-dialog', '@radix-ui/react-slider', '@radix-ui/react-switch', '@radix-ui/react-select', '@radix-ui/react-tooltip'],
-          dnd: ['@dnd-kit/core', '@dnd-kit/sortable', '@dnd-kit/utilities'],
-          virtual: ['@tanstack/react-virtual'],
-          forms: ['react-hook-form', 'zod'],
+        manualChunks(id) {
+          if (id.includes('node_modules/react') || id.includes('node_modules/react-dom') || id.includes('node_modules/zustand')) {
+            return 'vendor';
+          }
+          if (id.includes('@radix-ui')) {
+            return 'ui';
+          }
+          if (id.includes('@dnd-kit')) {
+            return 'dnd';
+          }
+          if (id.includes('@tanstack')) {
+            return 'virtual';
+          }
+          if (id.includes('react-hook-form') || id.includes('zod')) {
+            return 'forms';
+          }
         },
       },
     },

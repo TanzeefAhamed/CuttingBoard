@@ -1,10 +1,11 @@
 import React, { useEffect } from 'react';
-import { Settings, Search } from 'lucide-react';
+import { Settings, Search, Type } from 'lucide-react';
 import { useStore } from './store';
 import { Timeline } from './components/Timeline';
 import { Viewport } from './components/Viewport';
 import { Inspector } from './components/Inspector';
 import { MediaBrowser } from './components/MediaBrowser';
+import { TextCaptionsPanel } from './components/TextCaptionsPanel';
 import { Toolbar } from './components/Toolbar';
 import { Dialogs } from './components/Dialogs';
 import { useEditorEffects } from './editor/useEditorEffects';
@@ -22,11 +23,13 @@ function SidebarPane({
   paneId,
   title,
   icon,
+  customHeader,
   children,
 }: {
   paneId: PaneId;
-  title: string;
-  icon: React.ReactNode;
+  title?: string;
+  icon?: React.ReactNode;
+  customHeader?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const { paneSizes, setPaneSizes, activePane, setActivePane } = useStore();
@@ -63,10 +66,14 @@ function SidebarPane({
         }`}
         onClick={() => setActivePane(paneId)}
       >
-        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {icon}
-          {title}
-        </div>
+        {customHeader ? (
+          customHeader
+        ) : (
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {icon}
+            {title}
+          </div>
+        )}
         <button
           className={`p-1 rounded hover:bg-accent ${isActive ? 'text-primary' : 'text-muted-foreground'}`}
           title="Reset width"
@@ -125,7 +132,7 @@ function TimelinePane() {
 }
 
 function AppShell() {
-  const { paneSizes, setPaneSizes } = useStore();
+  const { paneSizes, setPaneSizes, activeSidebarTab, setActiveSidebarTab, setActivePane } = useStore();
   useEditorEffects();
 
   useEffect(() => {
@@ -152,9 +159,45 @@ function AppShell() {
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-background">
       <Toolbar />
       <div className="flex flex-1 min-h-0">
-        {/* Left: Media Browser */}
-        <SidebarPane paneId="media-browser" title="Media" icon={<Search className="w-3.5 h-3.5" />}>
-          <MediaBrowser />
+        {/* Left: Media & Text/Captions Tabs */}
+        <SidebarPane
+          paneId="media-browser"
+          customHeader={
+            <div className="flex items-center gap-1">
+              <button
+                data-testid="tab-media"
+                className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs font-semibold uppercase tracking-wider transition-colors ${
+                  activeSidebarTab === 'media'
+                    ? 'bg-primary/20 text-primary'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveSidebarTab('media');
+                  setActivePane('media-browser');
+                }}
+              >
+                <Search className="w-3.5 h-3.5" /> Media
+              </button>
+              <button
+                data-testid="tab-captions"
+                className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs font-semibold uppercase tracking-wider transition-colors ${
+                  activeSidebarTab === 'captions'
+                    ? 'bg-primary/20 text-primary'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveSidebarTab('captions');
+                  setActivePane('media-browser');
+                }}
+              >
+                <Type className="w-3.5 h-3.5" /> Text & Captions
+              </button>
+            </div>
+          }
+        >
+          {activeSidebarTab === 'media' ? <MediaBrowser /> : <TextCaptionsPanel />}
         </SidebarPane>
 
         {/* Center: Viewport + Timeline */}

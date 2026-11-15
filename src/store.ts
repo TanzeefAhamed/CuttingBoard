@@ -60,6 +60,8 @@ interface AppState {
   /* UI */
   activePane: PaneId;
   setActivePane: (pane: PaneId) => void;
+  activeSidebarTab: 'media' | 'captions';
+  setActiveSidebarTab: (tab: 'media' | 'captions') => void;
   paneSizes: Record<string, number>;
   setPaneSizes: (sizes: Record<string, number>) => void;
   theme: 'light' | 'dark' | 'system';
@@ -109,6 +111,10 @@ interface AppState {
   updateSegment: (segmentId: string, updates: Partial<Segment>, coalesceKey?: string) => void;
   splitSegment: (segmentId: string, splitTime: Microseconds) => void;
   splitAtPlayhead: () => boolean;
+  duplicateSegment: (segmentId: string) => string | null;
+  addTextSegment: (text?: string, opts?: { trackId?: string; start?: Microseconds; duration?: Microseconds }) => string;
+  updateSegmentText: (segmentId: string, text: string) => void;
+  reorderTrack: (trackId: string, direction: 'up' | 'down') => void;
   deleteSelected: () => void;
   addMediaToTimeline: (mediaId: string, opts?: { trackId?: string; start?: Microseconds }) => string | null;
   /** Begin a drag-edit: pushes a single history entry. */
@@ -183,6 +189,8 @@ export const useStore = create<AppState>()(
         /* UI */
         activePane: 'viewport',
         setActivePane: (pane) => set({ activePane: pane }),
+        activeSidebarTab: 'media',
+        setActiveSidebarTab: (tab) => set({ activeSidebarTab: tab }),
         paneSizes: { 'media-browser': 280, inspector: 300, timeline: 260 },
         setPaneSizes: (sizes) => set({ paneSizes: sizes }),
         theme: 'system',
@@ -330,6 +338,102 @@ export const useStore = create<AppState>()(
         deleteSelected: () => {
           const id = get().selectedSegment;
           if (id) get().removeSegment(id);
+        },
+        duplicateSegment: (segmentId) => {
+          const seg = get().segments.get(segmentId);
+          if (!seg) return null;
+          pushHistory();
+          const id = `seg-${crypto.randomUUID().slice(0, 8)}`;
+          const dur = seg.targetTimerange.duration;
+          const newStart = seg.targetTimerange.start.value + dur;
+          const newSeg: Segment = {
+            ...seg,
+            id,
+            instanceId: crypto.randomUUID(),
+            targetTimerange: new TimeRange(new TimePoint(µs(newStart)), dur),
+            transform: { ...seg.transform },
+            crop: seg.crop ? { ...seg.crop } : undefined,
+            filters: seg.filters ? { ...seg.filters } : undefined,
+            colorGrade: seg.colorGrade ? { ...seg.colorGrade } : undefined,
+            aiEffects: seg.aiEffects ? { ...seg.aiEffects } : undefined,
+          };
+          const next = new Map(get().segments);
+          next.set(id, newSeg);
+          set({ segments: next, selectedSegment: id });
+          return id;
+        },
+        addTextSegment: (text = 'Sample Text', opts) => {
+          pushHistory();
+          let tracks = get().tracks;
+          let track = opts?.trackId ? tracks.find((t) => t.id === opts.trackId) : undefined;
+          if (!track || track.locked) {
+            track = tracks.find((t) => t.type === 'text' && !t.locked) || tracks.find((t) => t.type === 'video' && !t.locked);
+          }
+          if (!track) {
+            track = createTrack({
+              id: `track-${crypto.randomUUID().slice(0, 8)}`,
+              name: `Text ${tracks.filter((t) => t.type === 'text').length + 1}`,
+              type: 'text',
+              order: tracks.length,
+            });
+            tracks = [...tracks, track];
+          }
+
+          const duration = opts?.duration ?? µs(3_000_000n);
+          const start = opts?.start ?? get().playhead;
+          const id = `seg-${crypto.randomUUID().slice(0, 8)}`;
+          const segment = createSegment({
+            id,
+            trackId: track.id,
+            type: 'text',
+            targetStart: new TimePoint(start),
+            targetDuration: duration,
+            sourceStart: TimePoint.zero(),
+            sourceDuration: duration,
+            media: {
+              id: `media-${id}`,
+              type: 'text',
+              url: 'data:text/plain,' + encodeURIComponent(text),
+              duration,
+              metadata: { text, fontSize: 44, color: '#ffffff', fontFamily: 'Inter' },
+            },
+          });
+
+          const next = new Map(get().segments);
+          next.set(id, segment);
+          set({
+            tracks,
+            segments: next,
+            selectedSegment: id,
+          });
+          return id;
+        },
+        updateSegmentText: (segmentId, text) => {
+          const seg = get().segments.get(segmentId);
+          if (!seg) return;
+          const next = new Map(get().segments);
+          next.set(segmentId, {
+            ...seg,
+            media: {
+              ...seg.media,
+              metadata: {
+                ...seg.media.metadata,
+                text,
+              },
+            },
+          });
+          set({ segments: next });
+        },
+        reorderTrack: (trackId, direction) => {
+          const tracks = [...get().tracks];
+          const idx = tracks.findIndex((t) => t.id === trackId);
+          if (idx === -1) return;
+          const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+          if (targetIdx < 0 || targetIdx >= tracks.length) return;
+          pushHistory();
+          const [removed] = tracks.splice(idx, 1);
+          tracks.splice(targetIdx, 0, removed!);
+          set({ tracks: tracks.map((t, i) => ({ ...t, order: i })) });
         },
         addMediaToTimeline: (mediaId, opts) => {
           const item = get().mediaItems.find((m) => m.id === mediaId);
