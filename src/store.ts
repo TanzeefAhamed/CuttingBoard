@@ -1,26 +1,31 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { TimePoint, TimeRange, µs } from './core/timeline/types';
 import type { Microseconds } from './core/timeline/types';
-import type { Segment } from './core/timeline/segment';
+import { createSegment, splitSegment as coreSplitSegment } from './core/timeline/segment';
+import type { Segment, TrackType } from './core/timeline/segment';
+import { createTrack } from './core/timeline/track';
 import type { Track } from './core/timeline/track';
 
 /* ------------------------------------------------------------------ types */
 
-type PaneId = 'media-browser' | 'viewport' | 'inspector' | 'timeline';
+export type PaneId = 'media-browser' | 'viewport' | 'inspector' | 'timeline';
+export type AspectRatio = '16:9' | '9:16' | '1:1' | '4:3' | '21:9';
+export type DialogId = 'settings' | 'export' | 'help' | null;
 
-interface SafeAreaState {
+export interface SafeAreaState {
   actionSafe: boolean;
   titleSafe: boolean;
   tiktokSafe: boolean;
-  aspectRatio: '16:9' | '9:16' | '1:1' | '4:3' | '21:9';
+  aspectRatio: AspectRatio;
 }
 
-interface MediaItem {
+export interface MediaItem {
   id: string;
   name: string;
   type: 'video' | 'audio' | 'image';
   url: string;
-  duration?: number;
+  duration?: number; // seconds
   width?: number;
   height?: number;
   thumbnail?: string;
@@ -28,7 +33,7 @@ interface MediaItem {
   createdAt: number;
 }
 
-interface ExportSettings {
+export interface ExportSettings {
   format: 'mp4' | 'mov' | 'webm';
   codec: 'h264' | 'hevc' | 'vp9' | 'av1';
   resolution: '4k' | '1080p' | '720p' | '480p';
@@ -39,6 +44,18 @@ interface ExportSettings {
   c2pa: boolean;
 }
 
+export interface AppSettings {
+  defaultImageDuration: number; // seconds
+  snapEnabled: boolean;
+  autoSelectOnAdd: boolean;
+  showTimecodeFrames: boolean;
+}
+
+interface Snapshot {
+  tracks: Track[];
+  segments: Map<string, Segment>;
+}
+
 interface AppState {
   /* UI */
   activePane: PaneId;
@@ -47,12 +64,17 @@ interface AppState {
   setPaneSizes: (sizes: Record<string, number>) => void;
   theme: 'light' | 'dark' | 'system';
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
+  activeDialog: DialogId;
+  openDialog: (d: DialogId) => void;
+  settings: AppSettings;
+  setSettings: (s: Partial<AppSettings>) => void;
+  resetSettings: () => void;
 
   /* Safe areas */
   safeArea: SafeAreaState;
   setSafeArea: (safeArea: Partial<SafeAreaState>) => void;
-  canvasAspectRatio: '16:9' | '9:16' | '1:1' | '4:3' | '21:9';
-  setCanvasAspectRatio: (ratio: '16:9' | '9:16' | '1:1' | '4:3' | '21:9') => void;
+  canvasAspectRatio: AspectRatio;
+  setCanvasAspectRatio: (ratio: AspectRatio) => void;
 
   /* Timeline */
   playhead: Microseconds;
@@ -61,6 +83,8 @@ interface AppState {
   setIsPlaying: (playing: boolean) => void;
   playbackSpeed: number;
   setPlaybackSpeed: (speed: number) => void;
+  volume: number;
+  setVolume: (v: number) => void;
   zoom: number;
   setZoom: (zoom: number) => void;
   scrollX: number;
@@ -69,19 +93,37 @@ interface AppState {
   outPoint: Microseconds | null;
   setInPoint: (point: Microseconds | null) => void;
   setOutPoint: (point: Microseconds | null) => void;
+  getDuration: () => Microseconds;
 
   /* Tracks & segments */
   tracks: Track[];
   setTracks: (tracks: Track[]) => void;
   addTrack: (track: Track) => void;
+  addTrackOfType: (type: TrackType) => string;
   removeTrack: (trackId: string) => void;
   updateTrack: (trackId: string, updates: Partial<Track>) => void;
   segments: Map<string, Segment>;
   setSegments: (segments: Map<string, Segment>) => void;
   addSegment: (segment: Segment) => void;
   removeSegment: (segmentId: string) => void;
-  updateSegment: (segmentId: string, updates: Partial<Segment>) => void;
+  updateSegment: (segmentId: string, updates: Partial<Segment>, coalesceKey?: string) => void;
   splitSegment: (segmentId: string, splitTime: Microseconds) => void;
+  splitAtPlayhead: () => boolean;
+  deleteSelected: () => void;
+  addMediaToTimeline: (mediaId: string, opts?: { trackId?: string; start?: Microseconds }) => string | null;
+  /** Begin a drag-edit: pushes a single history entry. */
+  beginEdit: () => void;
+  /** Live (non-history) move; call beginEdit() first. */
+  moveSegmentLive: (segmentId: string, newStart: Microseconds, trackId?: string) => void;
+  /** Live (non-history) trim; call beginEdit() first. edge = which edge moves to `time`. */
+  trimSegmentLive: (segmentId: string, edge: 'start' | 'end', time: Microseconds) => void;
+
+  /* History */
+  past: Snapshot[];
+  future: Snapshot[];
+  undo: () => void;
+  redo: () => void;
+  clearProject: () => void;
 
   /* Selection */
   selectedSegment: string | null;
@@ -97,159 +139,440 @@ interface AppState {
   /* Export */
   isExporting: boolean;
   exportProgress: number;
+  exportError: string | null;
   exportSettings: ExportSettings;
   setExportSettings: (settings: Partial<ExportSettings>) => void;
   startExport: () => Promise<void>;
   cancelExport: () => void;
 }
 
+const DEFAULT_SETTINGS: AppSettings = {
+  defaultImageDuration: 5,
+  snapEnabled: true,
+  autoSelectOnAdd: true,
+  showTimecodeFrames: true,
+};
+
+const MIN_CLIP_US = 100_000n;
+const HISTORY_LIMIT = 100;
+
+function defaultTracks(): Track[] {
+  return [
+    createTrack({ id: 'track-v1', name: 'Video 1', type: 'video', isPrimary: true, order: 0 }),
+    createTrack({ id: 'track-a1', name: 'Audio 1', type: 'audio', order: 1 }),
+  ];
+}
+
+let exportAbort: AbortController | null = null;
+let lastEdit: { key: string; at: number } | null = null;
+
 /* ------------------------------------------------------------------- store */
 
 export const useStore = create<AppState>()(
   persist(
-    (set, get) => ({
-      /* UI */
-      activePane: 'viewport',
-      setActivePane: (pane) => set({ activePane: pane }),
-      paneSizes: {
-        'media-browser': 280,
-        inspector: 300,
-        timeline: 260,
-      },
-      setPaneSizes: (sizes) => set({ paneSizes: sizes }),
-      theme: 'system',
-      setTheme: (theme) => set({ theme }),
+    (set, get) => {
+      const snapshot = (): Snapshot => ({ tracks: get().tracks, segments: get().segments });
+      const pushHistory = () => {
+        const past = [...get().past, snapshot()];
+        if (past.length > HISTORY_LIMIT) past.shift();
+        set({ past, future: [] });
+        lastEdit = null;
+      };
 
-      /* Safe areas */
-      safeArea: {
-        actionSafe: true,
-        titleSafe: true,
-        tiktokSafe: false,
-        aspectRatio: '16:9',
-      },
-      setSafeArea: (safeArea) => set({ safeArea: { ...get().safeArea, ...safeArea } }),
-      canvasAspectRatio: '16:9',
-      setCanvasAspectRatio: (ratio) => set({ canvasAspectRatio: ratio }),
+      return {
+        /* UI */
+        activePane: 'viewport',
+        setActivePane: (pane) => set({ activePane: pane }),
+        paneSizes: { 'media-browser': 280, inspector: 300, timeline: 260 },
+        setPaneSizes: (sizes) => set({ paneSizes: sizes }),
+        theme: 'system',
+        setTheme: (theme) => set({ theme }),
+        activeDialog: null,
+        openDialog: (d) => set({ activeDialog: d }),
+        settings: DEFAULT_SETTINGS,
+        setSettings: (s) => set({ settings: { ...get().settings, ...s } }),
+        resetSettings: () =>
+          set({
+            settings: DEFAULT_SETTINGS,
+            theme: 'system',
+            canvasAspectRatio: '16:9',
+            safeArea: { actionSafe: true, titleSafe: true, tiktokSafe: false, aspectRatio: '16:9' },
+          }),
 
-      /* Timeline */
-      playhead: 0n as Microseconds,
-      setPlayhead: (time) => set({ playhead: time }),
-      isPlaying: false,
-      setIsPlaying: (playing) => set({ isPlaying: playing }),
-      playbackSpeed: 1,
-      setPlaybackSpeed: (speed) =>
-        set({ playbackSpeed: Math.max(0.1, Math.min(100, speed)) }),
-      zoom: 1,
-      setZoom: (zoom) => set({ zoom: Math.max(0.05, Math.min(200, zoom)) }),
-      scrollX: 0,
-      setScrollX: (x) => set({ scrollX: x }),
-      inPoint: null,
-      outPoint: null,
-      setInPoint: (point) => set({ inPoint: point }),
-      setOutPoint: (point) => set({ outPoint: point }),
+        /* Safe areas */
+        safeArea: { actionSafe: true, titleSafe: true, tiktokSafe: false, aspectRatio: '16:9' },
+        setSafeArea: (safeArea) => set({ safeArea: { ...get().safeArea, ...safeArea } }),
+        canvasAspectRatio: '16:9',
+        setCanvasAspectRatio: (ratio) => set({ canvasAspectRatio: ratio }),
 
-      /* Tracks & segments */
-      tracks: [],
-      setTracks: (tracks) => set({ tracks }),
-      addTrack: (track) => set({ tracks: [...get().tracks, track] }),
-      removeTrack: (trackId) =>
-        set({ tracks: get().tracks.filter((t) => t.id !== trackId) }),
-      updateTrack: (trackId, updates) =>
-        set({
-          tracks: get().tracks.map((t) => (t.id === trackId ? { ...t, ...updates } : t)),
-        }),
-      segments: new Map(),
-      setSegments: (segments) => set({ segments }),
-      addSegment: (segment) => {
-        const next = new Map(get().segments);
-        next.set(segment.id, segment);
-        set({ segments: next });
-      },
-      removeSegment: (segmentId) => {
-        const next = new Map(get().segments);
-        next.delete(segmentId);
-        set({ segments: next });
-      },
-      updateSegment: (segmentId, updates) => {
-        const next = new Map(get().segments);
-        const segment = next.get(segmentId);
-        if (segment) next.set(segmentId, { ...segment, ...updates });
-        set({ segments: next });
-      },
-      splitSegment: (segmentId, splitTime) => {
-        const next = new Map(get().segments);
-        const segment = next.get(segmentId);
-        if (!segment) return;
-        const start = segment.targetTimerange.start;
-        const end = segment.targetTimerange.start + segment.targetTimerange.duration;
-        if (splitTime <= start || splitTime >= end) return;
+        /* Timeline */
+        playhead: 0n as Microseconds,
+        setPlayhead: (time) => set({ playhead: (time < 0n ? 0n : time) as Microseconds }),
+        isPlaying: false,
+        setIsPlaying: (playing) => set({ isPlaying: playing }),
+        playbackSpeed: 1,
+        setPlaybackSpeed: (speed) => set({ playbackSpeed: Math.max(0.1, Math.min(100, speed)) }),
+        volume: 1,
+        setVolume: (v) => set({ volume: Math.max(0, Math.min(1, v)) }),
+        zoom: 1,
+        setZoom: (zoom) => set({ zoom: Math.max(0.05, Math.min(200, zoom)) }),
+        scrollX: 0,
+        setScrollX: (x) => set({ scrollX: x }),
+        inPoint: null,
+        outPoint: null,
+        setInPoint: (point) => set({ inPoint: point }),
+        setOutPoint: (point) => set({ outPoint: point }),
+        getDuration: () => {
+          let end = 0n;
+          for (const s of get().segments.values()) {
+            const e = s.targetTimerange.start.value + s.targetTimerange.duration;
+            if (e > end) end = e;
+          }
+          return end as Microseconds;
+        },
 
-        const leftDuration = splitTime - start;
-        const rightDuration = end - splitTime;
-        const sourceStart = segment.sourceTimerange.start;
+        /* Tracks & segments */
+        tracks: defaultTracks(),
+        setTracks: (tracks) => set({ tracks }),
+        addTrack: (track) => {
+          pushHistory();
+          set({ tracks: [...get().tracks, track] });
+        },
+        addTrackOfType: (type) => {
+          const same = get().tracks.filter((t) => t.type === type).length;
+          const label = type === 'video' ? 'Video' : type === 'audio' ? 'Audio' : type === 'text' ? 'Text' : 'Adjust';
+          const track = createTrack({
+            id: `track-${crypto.randomUUID().slice(0, 8)}`,
+            name: `${label} ${same + 1}`,
+            type,
+            order: get().tracks.length,
+          });
+          pushHistory();
+          set({ tracks: [...get().tracks, track] });
+          return track.id;
+        },
+        removeTrack: (trackId) => {
+          pushHistory();
+          const next = new Map(get().segments);
+          for (const [id, s] of next) if (s.trackId === trackId) next.delete(id);
+          const sel = get().selectedSegment;
+          set({
+            tracks: get().tracks.filter((t) => t.id !== trackId),
+            segments: next,
+            selectedSegment: sel && next.has(sel) ? sel : null,
+          });
+        },
+        updateTrack: (trackId, updates) => {
+          pushHistory();
+          set({ tracks: get().tracks.map((t) => (t.id === trackId ? { ...t, ...updates } : t)) });
+        },
+        segments: new Map(),
+        setSegments: (segments) => set({ segments }),
+        addSegment: (segment) => {
+          pushHistory();
+          const next = new Map(get().segments);
+          next.set(segment.id, segment);
+          set({ segments: next });
+        },
+        removeSegment: (segmentId) => {
+          pushHistory();
+          const next = new Map(get().segments);
+          next.delete(segmentId);
+          set({
+            segments: next,
+            selectedSegment: get().selectedSegment === segmentId ? null : get().selectedSegment,
+          });
+        },
+        updateSegment: (segmentId, updates, coalesceKey) => {
+          const seg = get().segments.get(segmentId);
+          if (!seg) return;
+          const now = Date.now();
+          if (coalesceKey && lastEdit && lastEdit.key === `${segmentId}:${coalesceKey}` && now - lastEdit.at < 800) {
+            lastEdit.at = now;
+          } else {
+            pushHistory();
+            if (coalesceKey) lastEdit = { key: `${segmentId}:${coalesceKey}`, at: now };
+          }
+          const next = new Map(get().segments);
+          next.set(segmentId, { ...seg, ...updates });
+          set({ segments: next });
+        },
+        splitSegment: (segmentId, splitTime) => {
+          const seg = get().segments.get(segmentId);
+          if (!seg) return;
+          const parts = coreSplitSegment(seg, new TimePoint(splitTime));
+          if (!parts) return;
+          pushHistory();
+          const [left, right] = parts;
+          const uid = crypto.randomUUID().slice(0, 8);
+          const l = { ...left, id: `${seg.id.replace(/_(left|right)$/, '')}_${uid}a` };
+          const r = { ...right, id: `${seg.id.replace(/_(left|right)$/, '')}_${uid}b` };
+          const next = new Map<string, Segment>();
+          for (const [id, s] of get().segments) {
+            if (id === segmentId) {
+              next.set(l.id, l);
+              next.set(r.id, r);
+            } else next.set(id, s);
+          }
+          set({ segments: next, selectedSegment: r.id });
+        },
+        splitAtPlayhead: () => {
+          const { segments, selectedSegment, playhead } = get();
+          const contains = (s: Segment) =>
+            playhead > s.targetTimerange.start.value &&
+            playhead < s.targetTimerange.start.value + s.targetTimerange.duration;
+          let target = selectedSegment ? segments.get(selectedSegment) : undefined;
+          if (!target || !contains(target)) target = Array.from(segments.values()).find(contains);
+          if (!target) return false;
+          get().splitSegment(target.id, playhead);
+          return true;
+        },
+        deleteSelected: () => {
+          const id = get().selectedSegment;
+          if (id) get().removeSegment(id);
+        },
+        addMediaToTimeline: (mediaId, opts) => {
+          const item = get().mediaItems.find((m) => m.id === mediaId);
+          if (!item) return null;
+          const wantType: TrackType = item.type === 'audio' ? 'audio' : 'video';
+          pushHistory();
 
-        next.delete(segmentId);
-        next.set(`${segment.id}_left`, {
-          ...segment,
-          id: `${segment.id}_left`,
-          targetTimerange: {
-            start,
-            duration: leftDuration,
-          } as any,
-          sourceTimerange: {
-            start: sourceStart,
-            duration: leftDuration,
-          } as any,
-        });
-        next.set(`${segment.id}_right`, {
-          ...segment,
-          id: `${segment.id}_right`,
-          targetTimerange: {
-            start: splitTime,
-            duration: rightDuration,
-          } as any,
-          sourceTimerange: {
-            start: sourceStart + leftDuration,
-            duration: rightDuration,
-          } as any,
-        });
-        set({ segments: next });
-      },
+          let tracks = get().tracks;
+          let track = opts?.trackId ? tracks.find((t) => t.id === opts.trackId) : undefined;
+          if (!track || track.type !== wantType || track.locked) {
+            track = tracks.find((t) => t.type === wantType && !t.locked);
+          }
+          if (!track) {
+            track = createTrack({
+              id: `track-${crypto.randomUUID().slice(0, 8)}`,
+              name: wantType === 'video' ? 'Video 1' : 'Audio 1',
+              type: wantType,
+              order: tracks.length,
+            });
+            tracks = [...tracks, track];
+          }
 
-      /* Selection */
-      selectedSegment: null,
-      setSelectedSegment: (id) => set({ selectedSegment: id }),
-      selectedTrack: null,
-      setSelectedTrack: (id) => set({ selectedTrack: id }),
+          const settings = get().settings;
+          const seconds = item.duration && item.duration > 0 ? item.duration : settings.defaultImageDuration;
+          const duration = µs(Math.round(seconds * 1_000_000));
 
-      /* Media pool */
-      mediaItems: [],
-      addMedia: (item) => set({ mediaItems: [...get().mediaItems, item] }),
-      removeMedia: (id) =>
-        set({ mediaItems: get().mediaItems.filter((m) => m.id !== id) }),
+          let start: bigint;
+          if (opts?.start !== undefined) start = opts.start;
+          else {
+            start = 0n;
+            for (const s of get().segments.values()) {
+              if (s.trackId === track.id) {
+                const e = s.targetTimerange.start.value + s.targetTimerange.duration;
+                if (e > start) start = e;
+              }
+            }
+          }
+          if (start < 0n) start = 0n;
 
-      /* Export */
-      isExporting: false,
-      exportProgress: 0,
-      exportSettings: {
-        format: 'mp4',
-        codec: 'h264',
-        resolution: '1080p',
-        framerate: 30,
-        bitrate: 10_000_000,
-        bitrateMode: 'vbr',
-        audioCodec: 'aac',
-        c2pa: false,
-      },
-      setExportSettings: (settings) =>
-        set({ exportSettings: { ...get().exportSettings, ...settings } }),
-      startExport: async () => {
-        set({ isExporting: true, exportProgress: 0 });
-        /* real pipeline wired in the export milestone */
-        set({ isExporting: false, exportProgress: 100 });
-      },
-      cancelExport: () => set({ isExporting: false, exportProgress: 0 }),
-    }),
+          const id = `seg-${crypto.randomUUID().slice(0, 8)}`;
+          const segment = createSegment({
+            id,
+            trackId: track.id,
+            type: wantType,
+            targetStart: new TimePoint(µs(start)),
+            targetDuration: duration,
+            sourceStart: TimePoint.zero(),
+            sourceDuration: duration,
+            media: {
+              id: item.id,
+              type: item.type,
+              url: item.url,
+              duration,
+              metadata: { name: item.name, width: item.width, height: item.height },
+            },
+          });
+          const next = new Map(get().segments);
+          next.set(id, segment);
+          set({
+            tracks,
+            segments: next,
+            selectedSegment: settings.autoSelectOnAdd ? id : get().selectedSegment,
+          });
+          return id;
+        },
+        beginEdit: () => pushHistory(),
+        moveSegmentLive: (segmentId, newStart, trackId) => {
+          const seg = get().segments.get(segmentId);
+          if (!seg) return;
+          const start = newStart < 0n ? 0n : newStart;
+          let tid = seg.trackId;
+          if (trackId && trackId !== tid) {
+            const t = get().tracks.find((x) => x.id === trackId);
+            if (t && !t.locked && (t.type === seg.type || (t.type === 'video' && seg.type === 'video'))) tid = trackId;
+          }
+          const next = new Map(get().segments);
+          next.set(segmentId, {
+            ...seg,
+            trackId: tid,
+            targetTimerange: new TimeRange(new TimePoint(µs(start)), seg.targetTimerange.duration),
+          });
+          set({ segments: next });
+        },
+        trimSegmentLive: (segmentId, edge, time) => {
+          const seg = get().segments.get(segmentId);
+          if (!seg) return;
+          const tStart = seg.targetTimerange.start.value;
+          const tDur: bigint = seg.targetTimerange.duration;
+          const tEnd = tStart + tDur;
+          const sStart = seg.sourceTimerange.start.value;
+          const sDur: bigint = seg.sourceTimerange.duration;
+          const mediaDur: bigint = seg.media.duration;
+          const bounded = seg.media.type === 'video' || seg.media.type === 'audio';
+          // microseconds of source per microsecond of timeline
+          const ratio = sDur === 0n || tDur === 0n ? 1 : Number(sDur) / Number(tDur);
+          let nTStart: bigint = tStart;
+          let nTDur: bigint = tDur;
+          let nSStart: bigint = sStart;
+          let nSDur: bigint = sDur;
+
+          if (edge === 'start') {
+            let t: bigint = time;
+            if (t > tEnd - MIN_CLIP_US) t = tEnd - MIN_CLIP_US;
+            if (t < 0n) t = 0n;
+            let delta = t - tStart; // + shrinks
+            let srcDelta = BigInt(Math.round(Number(delta) * ratio));
+            if (bounded && sStart + srcDelta < 0n) {
+              srcDelta = -sStart;
+              delta = BigInt(Math.round(Number(srcDelta) / ratio));
+            }
+            nTStart = tStart + delta;
+            nTDur = tDur - delta;
+            nSStart = sStart + srcDelta;
+            nSDur = sDur - srcDelta;
+          } else {
+            let t: bigint = time;
+            if (t < tStart + MIN_CLIP_US) t = tStart + MIN_CLIP_US;
+            let newDur = t - tStart;
+            let newSDur = BigInt(Math.round(Number(newDur) * ratio));
+            if (bounded && sStart + newSDur > mediaDur) {
+              newSDur = mediaDur - sStart;
+              newDur = BigInt(Math.round(Number(newSDur) / ratio));
+            }
+            nTDur = newDur;
+            nSDur = newSDur;
+          }
+          if (nTDur <= 0n || nSDur <= 0n) return;
+          const next = new Map(get().segments);
+          next.set(segmentId, {
+            ...seg,
+            targetTimerange: new TimeRange(new TimePoint(µs(nTStart)), µs(nTDur)),
+            sourceTimerange: new TimeRange(new TimePoint(µs(nSStart)), µs(nSDur)),
+          });
+          set({ segments: next });
+        },
+
+        /* History */
+        past: [],
+        future: [],
+        undo: () => {
+          const { past } = get();
+          const prev = past[past.length - 1];
+          if (!prev) return;
+          const sel = get().selectedSegment;
+          set({
+            past: past.slice(0, -1),
+            future: [...get().future, snapshot()],
+            tracks: prev.tracks,
+            segments: prev.segments,
+            selectedSegment: sel && prev.segments.has(sel) ? sel : null,
+          });
+          lastEdit = null;
+        },
+        redo: () => {
+          const { future } = get();
+          const nxt = future[future.length - 1];
+          if (!nxt) return;
+          const sel = get().selectedSegment;
+          set({
+            future: future.slice(0, -1),
+            past: [...get().past, snapshot()],
+            tracks: nxt.tracks,
+            segments: nxt.segments,
+            selectedSegment: sel && nxt.segments.has(sel) ? sel : null,
+          });
+          lastEdit = null;
+        },
+        clearProject: () => {
+          pushHistory();
+          set({ segments: new Map(), tracks: defaultTracks(), selectedSegment: null, playhead: 0n as Microseconds, isPlaying: false });
+        },
+
+        /* Selection */
+        selectedSegment: null,
+        setSelectedSegment: (id) => set({ selectedSegment: id }),
+        selectedTrack: null,
+        setSelectedTrack: (id) => set({ selectedTrack: id }),
+
+        /* Media pool */
+        mediaItems: [],
+        addMedia: (item) => set({ mediaItems: [...get().mediaItems, item] }),
+        removeMedia: (id) => {
+          const used = Array.from(get().segments.values()).some((s) => s.media.id === id);
+          if (used) {
+            pushHistory();
+            const next = new Map(get().segments);
+            for (const [sid, s] of next) if (s.media.id === id) next.delete(sid);
+            const sel = get().selectedSegment;
+            set({ segments: next, selectedSegment: sel && next.has(sel) ? sel : null });
+          }
+          set({ mediaItems: get().mediaItems.filter((m) => m.id !== id) });
+        },
+
+        /* Export */
+        isExporting: false,
+        exportProgress: 0,
+        exportError: null,
+        exportSettings: {
+          format: 'webm',
+          codec: 'vp9',
+          resolution: '720p',
+          framerate: 30,
+          bitrate: 8_000_000,
+          bitrateMode: 'vbr',
+          audioCodec: 'opus',
+          c2pa: false,
+        },
+        setExportSettings: (settings) => set({ exportSettings: { ...get().exportSettings, ...settings } }),
+        startExport: async () => {
+          if (get().isExporting) return;
+          if (get().segments.size === 0) {
+            set({ exportError: 'Nothing to export — add clips to the timeline first.' });
+            return;
+          }
+          exportAbort = new AbortController();
+          set({ isExporting: true, exportProgress: 0, exportError: null, isPlaying: false });
+          try {
+            const { runExport } = await import('./editor/exporter');
+            await runExport(
+              {
+                segments: get().segments,
+                tracks: get().tracks,
+                duration: get().getDuration(),
+                aspect: get().canvasAspectRatio,
+                settings: get().exportSettings,
+              },
+              (p) => set({ exportProgress: p }),
+              exportAbort.signal,
+            );
+            set({ exportProgress: 100 });
+          } catch (e) {
+            if ((e as Error).name !== 'AbortError') set({ exportError: (e as Error).message || String(e) });
+          } finally {
+            set({ isExporting: false });
+            exportAbort = null;
+          }
+        },
+        cancelExport: () => {
+          exportAbort?.abort();
+          set({ isExporting: false, exportProgress: 0 });
+        },
+      };
+    },
     {
       name: 'cuttingboard-store',
       partialize: (state) => ({
@@ -257,7 +580,10 @@ export const useStore = create<AppState>()(
         theme: state.theme,
         exportSettings: state.exportSettings,
         canvasAspectRatio: state.canvasAspectRatio,
+        safeArea: state.safeArea,
+        settings: state.settings,
+        volume: state.volume,
       }),
-    }
-  )
+    },
+  ),
 );

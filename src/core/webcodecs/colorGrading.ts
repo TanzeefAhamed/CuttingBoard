@@ -547,16 +547,6 @@ uniform vec3 u_hsl_hue[8];
 uniform vec3 u_hsl_saturation[8];
 uniform vec3 u_hsl_lightness[8];
 
-// Curve textures
-uniform sampler2D u_curve_master;
-uniform sampler2D u_curve_r;
-uniform sampler2D u_curve_g;
-uniform sampler2D u_curve_b;
-uniform sampler3D u_lut3d;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
 // Utility functions
 vec3 rgb2hsv(vec3 c) {
   vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);

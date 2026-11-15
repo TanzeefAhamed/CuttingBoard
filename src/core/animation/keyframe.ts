@@ -1,5 +1,5 @@
 import { InterpolationType, CubicBezier, SpringConfig, getEasingFunction } from './easing';
-import { TimePoint, TimeRange, Microseconds, µs, µsFromFrames, toSeconds, toFrames } from '../timeline/types';
+import { Microseconds } from '../timeline/types';
 
 export interface Keyframe<T = number> {
   time: Microseconds;
@@ -40,11 +40,13 @@ export function removeKeyframeAt<T>(track: KeyframeTrack<T>, time: Microseconds)
 export function getSurroundingKeyframes<T>(track: KeyframeTrack<T>, time: Microseconds): [Keyframe<T>, Keyframe<T>] | null {
   const { keyframes } = track;
   if (keyframes.length === 0) return null;
-  if (keyframes.length === 1) return [keyframes[0], keyframes[0]];
+  const first = keyframes[0]!;
+  if (keyframes.length === 1) return [first, first];
 
   let prevIndex = -1;
   for (let i = 0; i < keyframes.length; i++) {
-    if (keyframes[i].time <= time) {
+    const kf = keyframes[i]!;
+    if (kf.time <= time) {
       prevIndex = i;
     } else {
       break;
@@ -52,18 +54,20 @@ export function getSurroundingKeyframes<T>(track: KeyframeTrack<T>, time: Micros
   }
 
   if (prevIndex === -1) {
-    return [keyframes[0], keyframes[0]];
+    return [first, first];
   }
 
+  const prev = keyframes[prevIndex]!;
   if (prevIndex === keyframes.length - 1) {
-    return [keyframes[prevIndex], keyframes[prevIndex]];
+    return [prev, prev];
   }
 
-  if (keyframes[prevIndex].time === time) {
-    return [keyframes[prevIndex], keyframes[prevIndex]];
+  if (prev.time === time) {
+    return [prev, prev];
   }
 
-  return [keyframes[prevIndex], keyframes[prevIndex + 1]];
+  const next = keyframes[prevIndex + 1]!;
+  return [prev, next];
 }
 
 function lerp(a: number, b: number, t: number): number {
@@ -97,7 +101,7 @@ export function interpolateValue<T>(
   }
 
   if (Array.isArray(from.value) && Array.isArray(to.value) && from.value.length === to.value.length) {
-    return from.value.map((v, i) => lerp(v, to.value[i], easedProgress)) as T;
+    return (from.value as number[]).map((v, i) => lerp(v, (to.value as number[])[i]!, easedProgress)) as T;
   }
 
   return progress < 1 ? from.value : to.value;
@@ -108,15 +112,12 @@ function isPoint2D(value: any): value is { x: number; y: number } {
          typeof value.x === 'number' && typeof value.y === 'number';
 }
 
-function lerp(a: number, b: number, t: number): number {
-  return a + (b - a) * t;
-}
-
 export function evaluateKeyframeTrack<T>(track: KeyframeTrack<T>, time: Microseconds): T {
   const { keyframes, defaultValue } = track;
   
   if (keyframes.length === 0) return defaultValue;
-  if (keyframes.length === 1) return keyframes[0].value;
+  const firstKf = keyframes[0]!;
+  if (keyframes.length === 1) return firstKf.value;
 
   const surrounding = getSurroundingKeyframes(track, time);
   if (!surrounding) return defaultValue;
@@ -125,9 +126,10 @@ export function evaluateKeyframeTrack<T>(track: KeyframeTrack<T>, time: Microsec
 
   if (from.time === to.time) return from.value;
 
-  if (time <= keyframes[0].time) return keyframes[0].value;
-  if (time >= keyframes[keyframes.length - 1].time) {
-    return keyframes[keyframes.length - 1].value;
+  const lastKf = keyframes[keyframes.length - 1]!;
+  if (time <= firstKf.time) return firstKf.value;
+  if (time >= lastKf.time) {
+    return lastKf.value;
   }
 
   const duration = Number(to.time - from.time);
@@ -161,10 +163,6 @@ export function getAllKeyframeTimes(tracks: KeyframeTrack<any>[]): Microseconds[
 }
 
 export function createLinearKeyframeTrack(property: string, defaultValue: number): KeyframeTrack<number> {
-  return createKeyframeTrack(property, defaultValue);
-}
-
-export function createPoint2DKeyframeTrack(property: string, defaultValue: { x: number; y: number } = { x: 0, y: 0 }): KeyframeTrack<{ x: number; y: number }> {
   return createKeyframeTrack(property, defaultValue);
 }
 
@@ -204,21 +202,22 @@ export function evaluateTransformKeyframes(keyframes: TransformKeyframes, time: 
 
 export function addTransformKeyframe<K extends keyof TransformKeyframes>(
   keyframes: TransformKeyframes,
-  property: keyof TransformKeyframes,
-  keyframe: Keyframe<TransformKeyframes[keyof TransformKeyframes]['defaultValue']>
+  property: K,
+  keyframe: Keyframe<TransformKeyframes[K]['defaultValue']>
 ): TransformKeyframes {
   return {
     ...keyframes,
-    [property]: addKeyframe(keyframes[property], keyframe as any),
+    [property]: addKeyframe(keyframes[property] as any, keyframe as any),
   };
 }
 
-export function evaluateTransformKeyframes(keyframes: TransformKeyframes, time: Microseconds) {
+export function removeTransformKeyframe<K extends keyof TransformKeyframes>(
+  keyframes: TransformKeyframes,
+  property: K,
+  time: Microseconds
+): TransformKeyframes {
   return {
-    position: evaluateKeyframeTrack(keyframes.position, time),
-    scale: evaluateKeyframeTrack(keyframes.scale, time),
-    rotation: evaluateKeyframeTrack(keyframes.rotation, time),
-    anchor: evaluateKeyframeTrack(keyframes.anchor, time),
-    opacity: evaluateKeyframeTrack(keyframes.opacity, time),
+    ...keyframes,
+    [property]: removeKeyframeAt(keyframes[property] as any, time),
   };
 }

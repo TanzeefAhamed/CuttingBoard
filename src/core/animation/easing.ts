@@ -1,4 +1,22 @@
-import { InterpolationType, CubicBezier, SpringConfig } from './index';
+/**
+ * Easing functions and types for animation.
+ */
+
+export type InterpolationType = 'linear' | 'hold' | 'bezier' | 'spring';
+
+export interface CubicBezier {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+export interface SpringConfig {
+  stiffness: number;
+  damping: number;
+  mass: number;
+  initialVelocity?: number;
+}
 
 /**
  * Linear interpolation between two values.
@@ -170,20 +188,20 @@ export const EASING_PRESETS: Record<string, (t: number) => number> = {
 export function getEasingFunction(type: InterpolationType, config?: CubicBezier | SpringConfig): (t: number) => number {
   switch (type) {
     case 'linear':
-      return EASING_PRESETS.linear;
+      return EASING_PRESETS.linear ?? ((t: number) => t);
     case 'hold':
       return holdInterpolation;
     case 'bezier':
       if (config && 'x1' in config) {
         return createCubicBezierEasing(config as CubicBezier);
       }
-      return EASING_PRESETS.easeInOut;
+      return EASING_PRESETS.easeInOut ?? ((t: number) => t);
     case 'spring':
       if (config && 'stiffness' in config) {
         return createSpringEasing(config as SpringConfig);
       }
       return createSpringEasing({ stiffness: 100, damping: 10, mass: 1 });
     default:
-      return EASING_PRESETS.linear;
+      return EASING_PRESETS.linear ?? ((t: number) => t);
   }
 }

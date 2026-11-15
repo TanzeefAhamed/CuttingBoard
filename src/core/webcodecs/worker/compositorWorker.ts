@@ -116,6 +116,7 @@ let width = 1920;
 let height = 1080;
 let isInitialized = false;
 let isDestroyed = false;
+let quadVao: WebGLVertexArrayObject | null = null;
 
 // Track state
 const tracks = new Map<string, TrackState>();
@@ -484,7 +485,8 @@ async function initialize(payload: InitializePayload): Promise<void> {
 
   // Create quad geometry
   if (gl) {
-    createQuadGeometry(gl);
+    const geom = createQuadGeometry(gl);
+    quadVao = geom.vao;
   }
 
   isInitialized = true;
@@ -574,7 +576,11 @@ function render(): void {
       gl.bindTexture(gl.TEXTURE_2D, track.texture);
 
       // Draw quad
-      // ... draw call
+      if (quadVao) {
+        gl.bindVertexArray(quadVao);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        gl.bindVertexArray(null);
+      }
     }
   }
 
@@ -593,6 +599,29 @@ self.onmessage = async (event: MessageEvent) => {
       case 'initialize': {
         await initialize(payload);
         self.postMessage({ type: 'initialized', payload: { success: true }, requestId });
+        break;
+      }
+
+      case 'setCanvas': {
+        canvas = payload.canvas;
+        if (payload.width) width = payload.width;
+        if (payload.height) height = payload.height;
+        if (canvas) {
+          canvas.width = width;
+          canvas.height = height;
+          await initializeWebGL(canvas, payload.preferWebGPU ?? false);
+          if (gl) {
+            quadVao = createQuadGeometry(gl).vao;
+          }
+          isInitialized = true;
+        }
+        self.postMessage({ type: 'canvasSet', payload: { success: true }, requestId });
+        break;
+      }
+
+      case 'render': {
+        render();
+        self.postMessage({ type: 'rendered', payload: { success: true }, requestId });
         break;
       }
 

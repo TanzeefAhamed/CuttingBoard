@@ -141,7 +141,7 @@ export function SafeAreaOverlay({
   showTitleSafe?: boolean;
   showTikTokSafe?: boolean;
 }) {
-  const [width, height] = aspectRatio.split(':').map(Number);
+  const [width, height] = (aspectRatio.split(':').map(Number) as [number, number]);
   const aspect = width / height;
 
   const getSafeZoneStyle = (percent: number) => ({

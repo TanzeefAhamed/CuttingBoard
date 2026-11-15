@@ -5,6 +5,8 @@
 import { TimePoint, TimeRange, Microseconds, RationalTime, FRAMERATES } from './types.js';
 import { Segment, TrackType, createSegment, splitSegment, trimSegment, getSegmentAtTime as getSegmentAtTimeFromArray } from './segment.js';
 
+export type { TrackType };
+
 export interface Track {
   id: string;
   name: string;

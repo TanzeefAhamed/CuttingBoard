@@ -10,9 +10,20 @@ export type RationalNumerator = bigint & { readonly __brand: unique symbol };
 export type RationalDenominator = bigint & { readonly __brand: unique symbol };
 
 /**
- * Creates a Microseconds value from a number of microseconds.
+ * Type guard to check if a value is a valid Microseconds
  */
-export function µs(value: bigint | number): Microseconds {
+export function isMicroseconds(value: unknown): value is Microseconds {
+  return typeof value === 'bigint';
+}
+
+/**
+ * Creates a Microseconds value from a number of microseconds.
+ * Accepts both raw bigint and already-branded Microseconds.
+ */
+export function µs(value: bigint | number | Microseconds): Microseconds {
+  if (typeof value === 'bigint' && !Object.hasOwn(value, '__brand')) {
+    return value as Microseconds;
+  }
   return BigInt(value) as Microseconds;
 }
 

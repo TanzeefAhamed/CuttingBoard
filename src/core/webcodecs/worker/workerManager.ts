@@ -495,5 +495,3 @@ export class PipelineManager {
     };
   }
 }
-
-export { WorkerManager, DecoderWorkerManager, EncoderWorkerManager, PipelineManager };

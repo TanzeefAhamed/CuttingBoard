@@ -390,31 +390,4 @@ function prefetchFrames(): void {
   console.log('Prefetch candidates:', candidates);
 }
 
-// Handle frame from decoder (called by VideoDecoder's output callback)
-function handleFrame(frame: VideoFrame): void {
-  const timestamp = frame.timestamp;
-  const duration = frame.duration || 0;
-  
-  // Add to cache
-  frameCache.set(timestamp, frame);
-  
-  // Find matching pending request
-  // Since we can't directly correlate, we'll broadcast to all pending requests
-  // that match this timestamp (simplified approach)
-  for (const [requestId, request] of pendingRequests.entries()) {
-    // In a real implementation, we'd match by timestamp
-    // For now, we'll resolve the first pending request
-    request.resolve(frame);
-    pendingRequests.delete(requestId);
-    break;
-  }
-  
-  // Notify main thread
-  postMessage('frameReady', {
-    frame,
-    timestamp: frame.timestamp,
-    duration: frame.duration || 0,
-  }, undefined, [frame]);
-}
-
 export {}; // Make this a module

@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useStore } from '../store';
+import type { MediaItem } from '../store';
 import {
   Search,
   Grid,
@@ -15,25 +16,12 @@ import {
   FileImage,
   FileAudio,
   Trash2,
-  RefreshCw,
   Upload,
 } from 'lucide-react';
 
-interface MediaItem {
-  id: string;
-  name: string;
-  type: 'video' | 'audio' | 'image';
-  url: string;
-  duration?: number;
-  width?: number;
-  height?: number;
-  thumbnail?: string;
-  size?: number;
-  createdAt: number;
-}
 
 export function MediaBrowser({ className = '' }: { className?: string }) {
-  const { mediaItems, addMedia, removeMedia } = useStore();
+  const { mediaItems, addMedia, removeMedia, addMediaToTimeline } = useStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'video' | 'audio' | 'image'>('all');
   const [sortBy, setSortBy] = useState<'name' | 'date' | 'type' | 'duration'>('date');
@@ -187,12 +175,6 @@ export function MediaBrowser({ className = '' }: { className?: string }) {
           >
             <Plus className="w-4 h-4" />
           </button>
-          <button
-            className="p-1.5 rounded-md bg-muted hover:bg-accent transition-colors"
-            title="Refresh"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -279,6 +261,7 @@ export function MediaBrowser({ className = '' }: { className?: string }) {
                 isSelected={selectedItems.has(item.id)}
                 onClick={() => toggleSelection(item.id)}
                 onRemove={() => removeMedia(item.id)}
+                onAdd={() => addMediaToTimeline(item.id)}
               />
             ))}
           </div>
@@ -301,6 +284,9 @@ export function MediaBrowser({ className = '' }: { className?: string }) {
                     selectedItems.has(item.id) ? 'bg-primary/10' : ''
                   }`}
                   onClick={() => toggleSelection(item.id)}
+                  onDoubleClick={() => addMediaToTimeline(item.id)}
+                  draggable
+                  onDragStart={(e) => startMediaDrag(e, item.id)}
                 >
                   <td className="px-2 py-1.5">
                     <span className="flex items-center gap-1.5 min-w-0">
@@ -319,7 +305,18 @@ export function MediaBrowser({ className = '' }: { className?: string }) {
                   <td className="px-2 py-1.5 text-right font-mono text-muted-foreground">
                     {formatFileSize(item.size)}
                   </td>
-                  <td className="px-1">
+                  <td className="px-1 whitespace-nowrap">
+                    <button
+                      className="p-0.5 rounded hover:bg-accent text-muted-foreground hover:text-primary"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        addMediaToTimeline(item.id);
+                      }}
+                      title="Add to timeline"
+                      aria-label="Add to timeline"
+                    >
+                      <Plus className="w-3 h-3" />
+                    </button>
                     <button
                       className="p-0.5 rounded hover:bg-accent text-muted-foreground hover:text-destructive"
                       onClick={(e) => {
@@ -352,26 +349,44 @@ export function MediaBrowser({ className = '' }: { className?: string }) {
 
 /* ------------------------------------------------------------------ helpers */
 
+export const MEDIA_DRAG_TYPE = 'application/x-cuttingboard-media';
+
+function startMediaDrag(e: React.DragEvent, id: string) {
+  e.dataTransfer.setData(MEDIA_DRAG_TYPE, id);
+  e.dataTransfer.setData('text/plain', id);
+  e.dataTransfer.effectAllowed = 'copy';
+}
+
 function MediaCard({
   item,
   isSelected,
   onClick,
   onRemove,
+  onAdd,
 }: {
   item: MediaItem;
   isSelected: boolean;
   onClick: () => void;
   onRemove: () => void;
+  onAdd: () => void;
 }) {
   return (
     <div
-      className={`relative group rounded-lg overflow-hidden border bg-card cursor-pointer transition-all ${
+      data-testid="media-card"
+      draggable
+      onDragStart={(e) => startMediaDrag(e, item.id)}
+      className={`relative group rounded-lg overflow-hidden border bg-card cursor-grab active:cursor-grabbing transition-all ${
         isSelected ? 'ring-2 ring-primary border-transparent' : 'border-border hover:border-primary/50'
       }`}
       onClick={onClick}
+      onDoubleClick={onAdd}
     >
       <div className="aspect-video relative overflow-hidden bg-muted flex items-center justify-center">
-        {item.thumbnail ? (
+        {item.type === 'image' ? (
+          <img src={item.url} alt={item.name} draggable={false} className="w-full h-full object-cover" />
+        ) : item.type === 'video' ? (
+          <video src={`${item.url}#t=0.1`} preload="metadata" muted draggable={false} className="w-full h-full object-cover pointer-events-none" />
+        ) : item.thumbnail ? (
           <img src={item.thumbnail} alt={item.name} className="w-full h-full object-cover" />
         ) : (
           <span className="text-muted-foreground/40">{getFileIcon(item.type)}</span>
@@ -381,6 +396,17 @@ function MediaCard({
             {formatDuration(item.duration)}
           </span>
         ) : null}
+        <button
+          className="absolute top-1 left-1 p-0.5 rounded bg-primary text-primary-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+          onClick={(e) => {
+            e.stopPropagation();
+            onAdd();
+          }}
+          title="Add to timeline"
+          aria-label="Add to timeline"
+        >
+          <Plus className="w-3.5 h-3.5" />
+        </button>
         <button
           className="absolute top-1 right-1 p-0.5 rounded bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive"
           onClick={(e) => {

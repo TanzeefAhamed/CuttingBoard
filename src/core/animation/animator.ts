@@ -51,8 +51,8 @@ export function evaluateSegmentAnimation(
   animationState: SegmentAnimationState,
   time: TimePoint
 ): AnimatedProperties {
-  const relativeTime = time.value - segment.targetTimerange.start.value;
-  if (relativeTime < 0) relativeTime = 0n;
+  let relativeTime = time.value - segment.targetTimerange.start.value;
+  if (relativeTime < 0n) relativeTime = 0n;
   
   const localTime = relativeTime as Microseconds;
 

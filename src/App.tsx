@@ -6,6 +6,9 @@ import { Viewport } from './components/Viewport';
 import { Inspector } from './components/Inspector';
 import { MediaBrowser } from './components/MediaBrowser';
 import { Toolbar } from './components/Toolbar';
+import { Dialogs } from './components/Dialogs';
+import { useEditorEffects } from './editor/useEditorEffects';
+import { initSampleMedia } from './editor/sampleMedia';
 
 type PaneId = 'media-browser' | 'inspector' | 'timeline';
 
@@ -123,6 +126,11 @@ function TimelinePane() {
 
 function AppShell() {
   const { paneSizes, setPaneSizes } = useStore();
+  useEditorEffects();
+
+  useEffect(() => {
+    initSampleMedia();
+  }, []);
 
   // Restore persisted pane sizes
   useEffect(() => {
@@ -162,6 +170,7 @@ function AppShell() {
           <Inspector />
         </SidebarPane>
       </div>
+      <Dialogs />
     </div>
   );
 }

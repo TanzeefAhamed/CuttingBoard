@@ -4,6 +4,7 @@
  */
 
 import { TimePoint, TimeRange, Microseconds, RationalTime } from './types.js';
+import type { ColorGradeConfig } from '../webcodecs/colorGrading.js';
 
 export type TrackType = 'video' | 'audio' | 'text' | 'adjustment';
 
@@ -69,7 +70,37 @@ export interface Segment {
   speed: number;
   /** Unique identifier for this segment instance */
   instanceId: string;
+  /** Audio gain (1 = 100%). Optional for backwards compatibility. */
+  volume?: number;
+  /** Crop in percent of source frame (0-100 per side). */
+  crop?: SegmentCrop;
+  /** Visual adjustments / effects. */
+  filters?: SegmentFilters;
+  /** Lift/Gamma/Gain, HSL, curves, 3D LUT color grading */
+  colorGrade?: Partial<ColorGradeConfig>;
+  /** AI effects (portrait matting, auto-captions) */
+  aiEffects?: {
+    portraitMatting?: boolean;
+    autoCaptions?: boolean;
+    captionsText?: string;
+  };
 }
+
+export interface SegmentCrop { top: number; bottom: number; left: number; right: number }
+
+export interface SegmentFilters {
+  blur: number;        // px
+  brightness: number;  // 100 = neutral
+  contrast: number;    // 100 = neutral
+  saturation: number;  // 100 = neutral
+  hue: number;         // degrees
+  effect: 'none' | 'grayscale' | 'sepia' | 'invert';
+}
+
+export const DEFAULT_CROP: SegmentCrop = { top: 0, bottom: 0, left: 0, right: 0 };
+export const DEFAULT_FILTERS: SegmentFilters = {
+  blur: 0, brightness: 100, contrast: 100, saturation: 100, hue: 0, effect: 'none',
+};
 
 export function createSegment(params: {
   id: string;
