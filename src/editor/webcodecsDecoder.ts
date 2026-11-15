@@ -76,7 +76,9 @@ export async function decodeVideoFrame(
       const clamped = Math.max(0, Math.min(timeSeconds, dec.duration || timeSeconds));
       const sample = await dec.sink.getSample(clamped);
       if (sample) {
-        return { frame: sample.toVideoFrame() };
+        const frame = sample.toVideoFrame();
+        sample.close();
+        return { frame };
       }
     } catch (e) {
       // If WebCodecs sink fails or sample is null, fall through to fallback video element
