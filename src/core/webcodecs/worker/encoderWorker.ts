@@ -285,6 +285,6 @@ self.onmessage = async (event: MessageEvent) => {
       requestId,
     });
   }
-});
+};
 
 export {}; // Make this a module

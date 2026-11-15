@@ -1,279 +1,239 @@
-/**
- * Timeline-specific Commands for Undo/Redo
- */
-
 import { produce } from 'immer';
-import { Command, createCommand, createCompositeCommand } from './types.js';
-import { Timeline } from '../timeline/timeline.js';
-import { Segment } from '../timeline/segment.js';
-import { Track } from '../timeline/track.js';
-import { TimePoint, TimeRange, Microseconds } from '../timeline/types.js';
-import {
-  addSegmentToTrack,
-  removeSegmentFromTrack,
-  moveSegmentInTrack,
-  splitSegmentInTrack,
-  trimSegmentInTrack,
-  addTrack,
-  removeTrack,
-  reorderTracks,
-  setPlayhead,
-  setPlayback,
-  setPlaybackSpeed,
-  setInPoint,
-  setOutPoint,
-} from '../timeline/timeline.js';
+import { Command, CommandType } from './types';
+import { Timeline } from '../timeline/timeline';
+import { Track, TrackType } from '../timeline/track';
+import { Segment } from '../timeline/segment';
+import { TimePoint, TimeRange, Microseconds, µs, µsFromFrames, toSeconds, toFrames } from '../timeline/types';
 
-/**
- * Add Segment Command
- */
-export function createAddSegmentCommand(
-  trackId: string,
-  segment: Segment
-): Command {
-  return {
-    ...createCommand(`Add segment ${segment.id} to track ${trackId}`),
-    execute: (timeline: Timeline) => addSegmentToTrack(timeline, trackId, segment),
-    undo: (timeline: Timeline) => removeSegmentFromTrack(timeline, trackId, segment.id),
-    redo: (timeline: Timeline) => addSegmentToTrack(timeline, trackId, segment),
-  };
+export interface TimelineCommandsState {
+  timeline: Timeline | null;
+  tracks: Track[];
+  segments: Map<string, Segment>;
 }
 
-/**
- * Remove Segment Command
- */
-export function createRemoveSegmentCommand(
-  trackId: string,
-  segmentId: string,
-  segment: Segment, // Store segment for undo
-  ripple: boolean = false
-): Command {
-  return {
-    ...createCommand(`Remove segment ${segmentId} from track ${trackId}`),
-    execute: (timeline: Timeline) => removeSegmentFromTrack(timeline, trackId, segmentId, ripple),
-    undo: (timeline: Timeline) => addSegmentToTrack(timeline, trackId, segment),
-    redo: (timeline: Timeline) => removeSegmentFromTrack(timeline, trackId, segmentId, ripple),
-  };
-}
-
-/**
- * Move Segment Command
- */
-export function createMoveSegmentCommand(
-  trackId: string,
-  segmentId: string,
-  newStart: TimePoint,
-  oldStart: TimePoint
-): Command {
-  return {
-    ...createCommand(`Move segment ${segmentId} on track ${trackId}`),
-    execute: (timeline: Timeline) => moveSegmentInTrack(timeline, trackId, segmentId, newStart),
-    undo: (timeline: Timeline) => moveSegmentInTrack(timeline, trackId, segmentId, oldStart),
-    redo: (timeline: Timeline) => moveSegmentInTrack(timeline, trackId, segmentId, newStart),
-  };
-}
-
-/**
- * Split Segment Command
- */
-export function createSplitSegmentCommand(
-  trackId: string,
-  segmentId: string,
-  splitTime: TimePoint,
-  originalSegment: Segment // Store original for undo
-): Command {
-  return {
-    ...createCommand(`Split segment ${segmentId} on track ${trackId} at ${splitTime.toString()}`),
-    execute: (timeline: Timeline) => splitSegmentInTrack(timeline, trackId, segmentId, splitTime),
-    undo: (timeline: Timeline) => {
-      // Remove the two split segments and restore original
-      let tl = removeSegmentFromTrack(timeline, trackId, `${segmentId}_left`);
-      tl = removeSegmentFromTrack(tl, trackId, `${segmentId}_right`);
-      return addSegmentToTrack(tl, trackId, originalSegment);
-    },
-    redo: (timeline: Timeline) => splitSegmentInTrack(timeline, trackId, segmentId, splitTime),
-  };
-}
-
-/**
- * Trim Segment Command
- * Stores the full original segment for accurate undo/redo.
- */
-export function createTrimSegmentCommand(
-  trackId: string,
-  segment: Segment,
-  newTargetRange: TimeRange
-): Command {
-  const oldTargetRange = segment.targetTimerange;
-  
-  return {
-    ...createCommand(`Trim segment ${segment.id} on track ${trackId}`),
-    execute: (timeline: Timeline) => trimSegmentInTrack(timeline, trackId, segment.id, newTargetRange),
-    undo: (timeline: Timeline) => {
-      // Restore the original segment directly
-      let tl = removeSegmentFromTrack(timeline, trackId, segment.id);
-      return addSegmentToTrack(tl, trackId, segment);
-    },
-    redo: (timeline: Timeline) => trimSegmentInTrack(timeline, trackId, segment.id, newTargetRange),
-  };
-}
-
-/**
- * Add Track Command
- */
-export function createAddTrackCommand(track: Track): Command {
-  return {
-    ...createCommand(`Add track ${track.name} (${track.type})`),
-    execute: (timeline: Timeline) => addTrack(timeline, track),
-    undo: (timeline: Timeline) => removeTrack(timeline, track.id),
-    redo: (timeline: Timeline) => addTrack(timeline, track),
-  };
-}
-
-/**
- * Remove Track Command
- */
-export function createRemoveTrackCommand(track: Track): Command {
-  return {
-    ...createCommand(`Remove track ${track.name} (${track.type})`),
-    execute: (timeline: Timeline) => removeTrack(timeline, track.id),
-    undo: (timeline: Timeline) => addTrack(timeline, track),
-    redo: (timeline: Timeline) => removeTrack(timeline, track.id),
-  };
-}
-
-/**
- * Reorder Tracks Command
- */
-export function createReorderTracksCommand(
-  trackIds: string[],
-  oldOrder: string[]
-): Command {
-  return {
-    ...createCommand('Reorder tracks'),
-    execute: (timeline: Timeline) => reorderTracks(timeline, trackIds),
-    undo: (timeline: Timeline) => reorderTracks(timeline, oldOrder),
-    redo: (timeline: Timeline) => reorderTracks(timeline, trackIds),
-  };
-}
-
-/**
- * Set Playhead Command
- */
-export function createSetPlayheadCommand(newTime: TimePoint, oldTime: TimePoint): Command {
-  return {
-    ...createCommand(`Set playhead to ${newTime.toString()}`),
-    execute: (timeline: Timeline) => setPlayhead(timeline, newTime),
-    undo: (timeline: Timeline) => setPlayhead(timeline, oldTime),
-    redo: (timeline: Timeline) => setPlayhead(timeline, newTime),
-  };
-}
-
-/**
- * Set Playback State Command
- */
-export function createSetPlaybackCommand(isPlaying: boolean, wasPlaying: boolean): Command {
-  return {
-    ...createCommand(isPlaying ? 'Play' : 'Pause'),
-    execute: (timeline: Timeline) => setPlayback(timeline, isPlaying),
-    undo: (timeline: Timeline) => setPlayback(timeline, wasPlaying),
-    redo: (timeline: Timeline) => setPlayback(timeline, isPlaying),
-  };
-}
-
-/**
- * Set Playback Speed Command
- */
-export function createSetPlaybackSpeedCommand(speed: number, oldSpeed: number): Command {
-  return {
-    ...createCommand(`Set playback speed to ${speed}x`),
-    execute: (timeline: Timeline) => setPlaybackSpeed(timeline, speed),
-    undo: (timeline: Timeline) => setPlaybackSpeed(timeline, oldSpeed),
-    redo: (timeline: Timeline) => setPlaybackSpeed(timeline, speed),
-  };
-}
-
-/**
- * Set In/Out Points Command
- */
-export function createSetInOutPointsCommand(
-  inPoint?: TimePoint,
-  outPoint?: TimePoint,
-  oldInPoint?: TimePoint,
-  oldOutPoint?: TimePoint
-): Command {
-  return {
-    ...createCommand('Set in/out points'),
-    execute: (timeline: Timeline) => {
-      let tl = setInPoint(timeline, inPoint);
-      return setOutPoint(tl, outPoint);
-    },
-    undo: (timeline: Timeline) => {
-      let tl = setInPoint(timeline, oldInPoint);
-      return setOutPoint(tl, oldOutPoint);
-    },
-    redo: (timeline: Timeline) => {
-      let tl = setInPoint(timeline, inPoint);
-      return setOutPoint(tl, outPoint);
-    },
-  };
-}
-
-/**
- * Set Segment Property Command (for keyframe/property changes)
- */
-export interface PropertyChange {
-  segmentId: string;
-  propertyPath: string;
-  oldValue: any;
-  newValue: any;
-}
-
-export function createSetSegmentPropertyCommand(
-  segmentId: string,
-  propertyPath: string,
-  oldValue: any,
-  newValue: any
-): Command {
-  return {
-    ...createCommand(`Set ${propertyPath} on segment ${segmentId}`),
-    execute: (timeline: Timeline) => {
-      // This would require a more complex implementation to modify nested properties
-      // For now, return timeline unchanged - actual implementation would use Immer produce
-      return setSegmentProperty(timeline, segmentId, propertyPath, newValue);
-    },
-    undo: (timeline: Timeline) => setSegmentProperty(timeline, segmentId, propertyPath, oldValue),
-    redo: (timeline: Timeline) => setSegmentProperty(timeline, segmentId, propertyPath, newValue),
-  };
-}
-
-/**
- * Helper to set a nested property on a segment using Immer produce
- */
-function setSegmentProperty(
-  timeline: Timeline,
-  segmentId: string,
-  propertyPath: string,
-  value: any
-): Timeline {
-  return produce(timeline, (draft: Timeline) => {
-    for (const track of draft.tracks) {
-      const segmentIndex = track.segments.findIndex(s => s.id === segmentId);
-      if (segmentIndex !== -1) {
-        const segment = track.segments[segmentIndex];
-        setNestedProperty(segment, propertyPath, value);
-        break;
+export function createTimelineReducer(initialState: TimelineCommandsState) {
+  return (state: TimelineCommandsState, command: Command): TimelineCommandsState => {
+    switch (command.type) {
+      case CommandType.ADD_TRACK: {
+        const { track } = command.payload as { track: Track };
+        return produce(state, (draft) => {
+          draft.tracks.push(track);
+          draft.timeline = draft.timeline ? { ...draft.timeline, tracks: [...draft.timeline.tracks, track] } : null;
+        });
       }
+
+      case CommandType.REMOVE_TRACK: {
+        const { trackId } = command.payload as { trackId: string };
+        return produce(state, (draft) => {
+          draft.tracks = draft.tracks.filter(t => t.id !== trackId);
+          draft.segments.forEach((segment, segmentId) => {
+            if (segment.trackId === trackId) {
+              draft.segments.delete(segmentId);
+            }
+          });
+          if (draft.timeline) {
+            draft.timeline = {
+              ...draft.timeline,
+              tracks: draft.timeline.tracks.filter(t => t.id !== trackId),
+            };
+          }
+        });
+      }
+
+      case CommandType.ADD_SEGMENT: {
+        const { segment, trackId } = command.payload as { segment: Segment; trackId: string };
+        return produce(state, (draft) => {
+          draft.segments.set(segment.id, segment);
+          const track = draft.tracks.find(t => t.id === trackId);
+          if (track) {
+            track.segments.push(segment.id);
+          }
+          if (draft.timeline) {
+            draft.timeline = {
+              ...draft.timeline,
+              tracks: draft.timeline.tracks.map(t =>
+                t.id === trackId ? { ...t, segments: [...t.segments, segment.id] } : t
+              ),
+            };
+          }
+        });
+      }
+
+      case CommandType.REMOVE_SEGMENT: {
+        const { segmentId } = command.payload as { segmentId: string };
+        return produce(state, (draft) => {
+          const segment = draft.segments.get(segmentId);
+          if (segment) {
+            draft.segments.delete(segmentId);
+            const track = draft.tracks.find(t => t.id === segment.trackId);
+            if (track) {
+              track.segments = track.segments.filter(id => id !== segmentId);
+            }
+          }
+          if (draft.timeline) {
+            draft.timeline = {
+              ...draft.timeline,
+              tracks: draft.timeline.tracks.map(t => ({
+                ...t,
+                segments: t.segments.filter(id => id !== segmentId),
+              })),
+            };
+          }
+        });
+      }
+
+      case CommandType.MOVE_SEGMENT: {
+        const { segmentId, newStart } = command.payload as { segmentId: string; newStart: bigint };
+        return produce(state, (draft) => {
+          const segment = draft.segments.get(segmentId);
+          if (segment) {
+            const oldStart = segment.targetTimerange.start;
+            const duration = segment.targetTimerange.duration;
+            segment.targetTimerange = {
+              start: newStart,
+              duration,
+            };
+          }
+        });
+      }
+
+      case CommandType.TRIM_SEGMENT: {
+        const { segmentId, newDuration } = command.payload as { segmentId: string; newDuration: bigint };
+        return produce(state, (draft) => {
+          const segment = draft.segments.get(segmentId);
+          if (segment) {
+            segment.targetTimerange = {
+              start: segment.targetTimerange.start,
+              duration: newDuration,
+            };
+          }
+        });
+      }
+
+      case CommandType.SPLIT_SEGMENT: {
+        const { segmentId, splitTime } = command.payload as { segmentId: string; splitTime: bigint };
+        return produce(state, (draft) => {
+          const segment = draft.segments.get(segmentId);
+          if (!segment) return;
+
+          const start = segment.targetTimerange.start;
+          const end = segment.targetTimerange.start + segment.targetTimerange.duration;
+          if (splitTime <= start || splitTime >= end) return;
+
+          const leftDuration = splitTime - start;
+          const rightDuration = end - splitTime;
+          const sourceStart = segment.sourceTimerange.start;
+
+          draft.segments.delete(segmentId);
+          
+          const leftSegment: Segment = {
+            ...segment,
+            id: `${segment.id}_left`,
+            targetTimerange: {
+              start,
+              duration: leftDuration,
+            },
+            sourceTimerange: {
+              start: sourceStart,
+              duration: leftDuration,
+            },
+          };
+
+          const rightSegment: Segment = {
+            ...segment,
+            id: `${segment.id}_right`,
+            targetTimerange: {
+              start: splitTime,
+              duration: rightDuration,
+            },
+            sourceTimerange: {
+              start: sourceStart + leftDuration,
+              duration: rightDuration,
+            },
+          };
+
+          draft.segments.set(leftSegment.id, leftSegment);
+          draft.segments.set(rightSegment.id, rightSegment);
+        });
+      }
+
+      case CommandType.UPDATE_SEGMENT: {
+        const { segmentId, updates } = command.payload as { segmentId: string; updates: any };
+        return produce(state, (draft) => {
+          const segment = draft.segments.get(segmentId);
+          if (segment) {
+            Object.assign(segment, updates);
+          }
+        });
+      }
+
+      case CommandType.UPDATE_TRACK: {
+        const { trackId, updates } = command.payload as { trackId: string; updates: any };
+        return produce(state, (draft) => {
+          const track = draft.tracks.find(t => t.id === trackId);
+          if (track) {
+            Object.assign(track, updates);
+          }
+        });
+      }
+
+      case CommandType.SET_PLAYHEAD: {
+        const { time } = command.payload as { time: bigint };
+        return produce(state, (draft) => {
+          // Playhead is managed in UI state
+        });
+      }
+
+      case CommandType.SET_ZOOM: {
+        const { zoom } = command.payload as { zoom: number };
+        return produce(state, (draft) => {
+          // Zoom is managed in UI state
+        });
+      }
+
+      case CommandType.SET_IN_POINT: {
+        const { time } = command.payload as { time: bigint | null };
+        return produce(state, (draft) => {
+          // In/Out points managed in UI state
+        });
+      }
+
+      case CommandType.SET_OUT_POINT: {
+        const { time } = command.payload as { time: bigint | null };
+        return produce(state, (draft) => {
+          // In/Out points managed in UI state
+        });
+      }
+
+      case CommandType.SET_PLAYBACK_SPEED: {
+        const { speed } = command.payload as { speed: number };
+        return produce(state, (draft) => {
+          // Playback speed managed in UI state
+        });
+      }
+
+      case CommandType.SET_CANVAS_ASPECT_RATIO: {
+        const { ratio } = command.payload as { ratio: string };
+        return produce(state, (draft) => {
+          // Aspect ratio managed in UI state
+        });
+      }
+
+      case CommandType.SET_SAFE_AREA: {
+        const { safeArea } = command.payload as { safeArea: any };
+        return produce(state, (draft) => {
+          // Safe area managed in UI state
+        });
+      }
+
+      default:
+        return state;
     }
-  });
+  };
 }
 
-function setNestedProperty(obj: any, path: string, value: any): void {
-  const keys = path.split('.');
-  let current = obj;
-  for (let i = 0; i < keys.length - 1; i++) {
-    current = current[keys[i]];
-    if (!current) return;
-  }
-  current[keys[keys.length - 1]] = value;
-}
+export const initialTimelineCommandsState: TimelineCommandsState = {
+  timeline: null,
+  tracks: [],
+  segments: new Map(),
+};

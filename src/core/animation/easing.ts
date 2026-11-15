@@ -1,37 +1,10 @@
-/**
- * Easing and Interpolation Functions for Keyframe Animation
- * 
- * Supports: linear, hold, cubic-bezier, and spring interpolation
- */
-
-export type InterpolationType = 'linear' | 'hold' | 'bezier' | 'spring';
-
-export interface CubicBezier {
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-}
-
-export interface SpringConfig {
-  stiffness: number;    // Spring stiffness (k)
-  damping: number;      // Damping coefficient (c)
-  mass: number;         // Mass (m)
-  initialVelocity?: number;
-}
+import { InterpolationType, CubicBezier, SpringConfig } from './index';
 
 /**
  * Linear interpolation between two values.
  */
 export function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
-}
-
-/**
- * Linear interpolation for arrays/vectors.
- */
-export function lerpArray(a: number[], b: number[], t: number): number[] {
-  return a.map((val, i) => lerp(val, b[i], t));
 }
 
 /**

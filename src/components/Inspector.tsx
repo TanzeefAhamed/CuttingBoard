@@ -15,7 +15,7 @@ import {
   ArrowUpDown,
   Settings,
   Video,
-  Keyframe as KeyframeIcon,
+  Diamond as KeyframeIcon,
 } from 'lucide-react';
 
 interface InspectorProps {

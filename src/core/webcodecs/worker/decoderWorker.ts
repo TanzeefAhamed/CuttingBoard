@@ -377,7 +377,7 @@ self.onmessage = async (event: MessageEvent) => {
       requestId 
     });
   }
-});
+};
 
 // Prefetch frames based on playhead and direction
 function prefetchFrames(): void {

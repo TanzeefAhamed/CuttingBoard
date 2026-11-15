@@ -1,135 +1,95 @@
-/**
- * Command Types for Transactional Undo/Redo System
- * 
- * Implements the Command Pattern with Immer for immutable state updates.
- */
+export enum CommandType {
+  ADD_TRACK = 'ADD_TRACK',
+  REMOVE_TRACK = 'REMOVE_TRACK',
+  ADD_SEGMENT = 'ADD_SEGMENT',
+  REMOVE_SEGMENT = 'REMOVE_SEGMENT',
+  MOVE_SEGMENT = 'MOVE_SEGMENT',
+  TRIM_SEGMENT = 'TRIM_SEGMENT',
+  SPLIT_SEGMENT = 'SPLIT_SEGMENT',
+  UPDATE_SEGMENT = 'UPDATE_SEGMENT',
+  UPDATE_TRACK = 'UPDATE_TRACK',
+  SET_PLAYHEAD = 'SET_PLAYHEAD',
+  SET_ZOOM = 'SET_ZOOM',
+  SET_IN_POINT = 'SET_IN_POINT',
+  SET_OUT_POINT = 'SET_OUT_POINT',
+  SET_PLAYBACK_SPEED = 'SET_PLAYBACK_SPEED',
+  SET_CANVAS_ASPECT_RATIO = 'SET_CANVAS_ASPECT_RATIO',
+  SET_SAFE_AREA = 'SET_SAFE_AREA',
+}
 
-import { produce, Draft } from 'immer';
-import { Timeline } from '../timeline/timeline.js';
-import { Segment } from '../timeline/segment.js';
-import { Track } from '../timeline/track.js';
-import { TimePoint, Microseconds } from '../timeline/types.js';
-
-/**
- * Base command interface.
- */
 export interface Command {
-  /** Unique identifier for this command */
   id: string;
-  /** Human-readable description */
-  description: string;
-  /** Timestamp when command was created */
+  type: CommandType;
   timestamp: number;
-  
-  /** Execute the command on the timeline */
-  execute(timeline: Timeline): Timeline;
-  
-  /** Undo the command on the timeline */
-  undo(timeline: Timeline): Timeline;
-  
-  /** Redo the command on the timeline */
-  redo(timeline: Timeline): Timeline;
+  payload: any;
+  undo: (state: any) => any;
+  redo: (state: any) => any;
 }
 
-/**
- * Creates a base command with common properties.
- */
-export function createCommand(description: string): Omit<Command, 'execute' | 'undo' | 'redo'> {
-  return {
-    id: crypto.randomUUID(),
-    description,
-    timestamp: Date.now(),
-  };
+export interface CommandManagerState {
+  undoStack: Command[];
+  redoStack: Command[];
+  maxHistory: number;
 }
 
-/**
- * Composite command that executes multiple commands as a single unit.
- */
-export function createCompositeCommand(
-  description: string,
-  commands: Command[]
-): Command {
-  return {
-    ...createCommand(description),
-    execute: (timeline: Timeline) => {
-      return commands.reduce((tl, cmd) => cmd.execute(tl), timeline);
-    },
-    undo: (timeline: Timeline) => {
-      // Undo in reverse order
-      return [...commands].reverse().reduce((tl, cmd) => cmd.undo(tl), timeline);
-    },
-    redo: (timeline: Timeline) => {
-      return commands.reduce((tl, cmd) => cmd.redo(tl), timeline);
-    },
-  };
-}
+export const initialCommandManagerState: CommandManagerState = {
+  undoStack: [],
+  redoStack: [],
+  maxHistory: 100,
+};
 
-/**
- * Command history stack with configurable depth.
- */
-export interface CommandHistory {
-  /** Past commands (can undo) */
-  past: Command[];
-  /** Future commands (can redo) */
-  future: Command[];
-  /** Maximum history depth */
-  maxDepth: number;
-}
+export class UndoRedoManager {
+  private undoStack: Command[] = [];
+  private redoStack: Command[] = [];
+  private maxHistory: number = 100;
 
-export function createCommandHistory(maxDepth: number = 100): CommandHistory {
-  return {
-    past: [],
-    future: [],
-    maxDepth,
-  };
-}
-
-export function canUndo(history: CommandHistory): boolean {
-  return history.past.length > 0;
-}
-
-export function canRedo(history: CommandHistory): boolean {
-  return history.future.length > 0;
-}
-
-export function pushCommand(history: CommandHistory, command: Command): CommandHistory {
-  // Clear future when new command is pushed
-  const newPast = [...history.past, command];
-  
-  // Trim to max depth
-  if (newPast.length > history.maxDepth) {
-    newPast.shift();
+  execute(command: Command): void {
+    this.undoStack.push(command);
+    if (this.undoStack.length > this.maxHistory) {
+      this.undoStack.shift();
+    }
+    this.redoStack = [];
   }
-  
-  return {
-    ...history,
-    past: newPast,
-    future: [],
-  };
-}
 
-export function undoCommand(history: CommandHistory): { history: CommandHistory; command: Command } | null {
-  if (!canUndo(history)) return null;
-  
-  const command = history.past[history.past.length - 1];
-  const newPast = history.past.slice(0, -1);
-  const newFuture = [command, ...history.future];
-  
-  return {
-    history: { ...history, past: newPast, future: newFuture },
-    command,
-  };
-}
+  undo(): Command | null {
+    if (this.undoStack.length === 0) return null;
+    const command = this.undoStack.pop()!;
+    this.redoStack.push(command);
+    return command;
+  }
 
-export function redoCommand(history: CommandHistory): { history: CommandHistory; command: Command } | null {
-  if (!canRedo(history)) return null;
-  
-  const command = history.future[0];
-  const newPast = [...history.past, command];
-  const newFuture = history.future.slice(1);
-  
-  return {
-    history: { ...history, past: newPast, future: newFuture },
-    command,
-  };
+  redo(): Command | null {
+    if (this.redoStack.length === 0) return null;
+    const command = this.redoStack.pop()!;
+    this.undoStack.push(command);
+    return command;
+  }
+
+  canUndo(): boolean {
+    return this.undoStack.length > 0;
+  }
+
+  canRedo(): boolean {
+    return this.redoStack.length > 0;
+  }
+
+  clear(): void {
+    this.undoStack = [];
+    this.redoStack = [];
+  }
+
+  getUndoStack(): Command[] {
+    return [...this.undoStack];
+  }
+
+  getRedoStack(): Command[] {
+    return [...this.redoStack];
+  }
+
+  setMaxHistory(max: number): void {
+    this.maxHistory = max;
+    if (this.undoStack.length > this.maxHistory) {
+      this.undoStack = this.undoStack.slice(-this.maxHistory);
+    }
+  }
 }
