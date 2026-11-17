@@ -46,9 +46,9 @@ function Check({ checked, onChange, label }: { checked: boolean; onChange: (v: b
       aria-label={label}
       aria-checked={checked}
       onClick={() => onChange(!checked)}
-      className={`relative w-9 h-5 rounded-full transition-colors ${checked ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+      className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors cursor-pointer ${checked ? 'bg-primary' : 'bg-muted-foreground/30'}`}
     >
-      <span className={`absolute top-0.5 transition-transform ${checked ? 'translate-x-[18px]' : 'translate-x-0.5'} w-4 h-4 rounded-full bg-white shadow`} />
+      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
     </button>
   );
 }
@@ -174,8 +174,11 @@ const SHORTCUTS: Array<[string, string]> = [
   ['← / →', 'Step one frame'],
   ['J / L', 'Back / forward 1 second'],
   ['Home / End', 'Go to start / end'],
+  ['V / C', 'Selection / Razor cut tool'],
+  ['S', 'Toggle snapping'],
   ['Ctrl+B', 'Split clip at playhead'],
-  ['Delete', 'Delete selected clip'],
+  ['Ctrl+D', 'Duplicate selected clip'],
+  ['Delete / Backspace', 'Delete selected clip'],
   ['Ctrl+Z / Ctrl+Shift+Z', 'Undo / redo'],
   ['Ctrl+S', 'Save project (JSON)'],
   ['Ctrl+E', 'Export'],

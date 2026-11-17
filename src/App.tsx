@@ -11,14 +11,16 @@ import { EffectsPanel } from './components/EffectsPanel';
 import { AudioPanel } from './components/AudioPanel';
 import { Toolbar } from './components/Toolbar';
 import { Dialogs } from './components/Dialogs';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { CultSegmentedTabs } from './components/ui/cult';
 import { useEditorEffects } from './editor/useEditorEffects';
 import { initSampleMedia } from './editor/sampleMedia';
 
 type PaneId = 'media-browser' | 'inspector' | 'timeline';
 
 const PANE_DEFAULTS: Record<PaneId, { width?: number; height?: number; min?: number }> = {
-  'media-browser': { width: 280, min: 200 },
-  'inspector': { width: 300, min: 240 },
+  'media-browser': { width: 300, min: 240 },
+  'inspector': { width: 310, min: 260 },
   'timeline': { height: 260, min: 140 },
 };
 
@@ -27,17 +29,19 @@ function SidebarPane({
   title,
   icon,
   customHeader,
+  side = 'left',
   children,
 }: {
   paneId: PaneId;
   title?: string;
   icon?: React.ReactNode;
   customHeader?: React.ReactNode;
+  side?: 'left' | 'right';
   children: React.ReactNode;
 }) {
   const { paneSizes, setPaneSizes, activePane, setActivePane } = useStore();
   const defaults = PANE_DEFAULTS[paneId];
-  const width = paneSizes[paneId] ?? defaults.width ?? 280;
+  const width = paneSizes[paneId] ?? defaults.width ?? 300;
   const isActive = activePane === paneId;
 
   const startResize = (e: React.MouseEvent) => {
@@ -46,7 +50,8 @@ function SidebarPane({
     const startWidth = width;
 
     const onMove = (ev: MouseEvent) => {
-      const next = Math.max(defaults.min ?? 200, startWidth + (ev.clientX - startX));
+      const delta = side === 'left' ? ev.clientX - startX : startX - ev.clientX;
+      const next = Math.max(defaults.min ?? 220, Math.min(520, startWidth + delta));
       setPaneSizes({ ...useStore.getState().paneSizes, [paneId]: next });
     };
     const onUp = () => {
@@ -59,42 +64,53 @@ function SidebarPane({
 
   return (
     <div
-      className="relative flex-shrink-0 flex flex-col bg-card border-r border-border overflow-hidden"
+      className={`relative flex-shrink-0 flex flex-col bg-card overflow-hidden ${
+        side === 'left' ? 'border-r border-border/80 dark:border-white/[0.08]' : 'border-l border-border/80 dark:border-white/[0.08]'
+      }`}
       style={{ width }}
     >
       {/* Header */}
-      <div
-        className={`flex items-center justify-between px-3 py-2 border-b border-border cursor-pointer ${
-          isActive ? 'bg-primary/10' : ''
-        }`}
-        onClick={() => setActivePane(paneId)}
-      >
-        {customHeader ? (
-          customHeader
-        ) : (
+      {customHeader ? (
+        <div
+          className={`p-2 border-b border-border/80 dark:border-white/[0.08] ${
+            isActive ? 'bg-primary/[0.04]' : ''
+          }`}
+          onClick={() => setActivePane(paneId)}
+        >
+          {customHeader}
+        </div>
+      ) : (
+        <div
+          className={`flex items-center justify-between px-3 py-2 border-b border-border/80 dark:border-white/[0.08] cursor-pointer ${
+            isActive ? 'bg-primary/[0.06]' : ''
+          }`}
+          onClick={() => setActivePane(paneId)}
+        >
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {icon}
             {title}
           </div>
-        )}
-        <button
-          className={`p-1 rounded hover:bg-accent ${isActive ? 'text-primary' : 'text-muted-foreground'}`}
-          title="Reset width"
-          onClick={(e) => {
-            e.stopPropagation();
-            setPaneSizes({ ...useStore.getState().paneSizes, [paneId]: defaults.width ?? 280 });
-          }}
-        >
-          <Settings className="w-3.5 h-3.5" />
-        </button>
-      </div>
+          <button
+            className={`p-1 rounded hover:bg-accent ${isActive ? 'text-primary' : 'text-muted-foreground'}`}
+            title="Reset width"
+            onClick={(e) => {
+              e.stopPropagation();
+              setPaneSizes({ ...useStore.getState().paneSizes, [paneId]: defaults.width ?? 300 });
+            }}
+          >
+            <Settings className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Body */}
       <div className="flex-1 min-h-0">{children}</div>
 
       {/* Resize handle */}
       <div
-        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/40 transition-colors"
+        className={`absolute top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/40 transition-colors z-10 ${
+          side === 'left' ? 'right-0' : 'left-0'
+        }`}
         onMouseDown={startResize}
       />
     </div>
@@ -112,7 +128,7 @@ function TimelinePane() {
     const startHeight = height;
 
     const onMove = (ev: MouseEvent) => {
-      const next = Math.max(defaults.min ?? 140, startHeight - (ev.clientY - startY));
+      const next = Math.max(defaults.min ?? 140, Math.min(520, startHeight - (ev.clientY - startY)));
       setPaneSizes({ ...useStore.getState().paneSizes, timeline: next });
     };
     const onUp = () => {
@@ -158,110 +174,50 @@ function AppShell() {
     localStorage.setItem('pane-sizes', JSON.stringify(paneSizes));
   }, [paneSizes]);
 
+  const normalizedSidebarTab = activeSidebarTab === 'captions' ? 'text' : activeSidebarTab;
+
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-background">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-background text-foreground">
       <Toolbar />
       <div className="flex flex-1 min-h-0">
-        {/* Left: Creative Suite Tabs (Media, Text, Elements, Effects, Audio) */}
+        {/* Left: Cult UI Creative Suite Tabs */}
         <SidebarPane
           paneId="media-browser"
+          side="left"
           customHeader={
-            <div className="flex items-center gap-0.5 overflow-x-auto py-0.5 scrollbar-none">
-              <button
-                data-testid="tab-media"
-                className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold uppercase tracking-wider transition-colors flex-shrink-0 ${
-                  activeSidebarTab === 'media'
-                    ? 'bg-primary/20 text-primary'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActiveSidebarTab('media');
-                  setActivePane('media-browser');
-                }}
-              >
-                <Search className="w-3 h-3" /> Media
-              </button>
-              <button
-                data-testid="tab-text"
-                className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold uppercase tracking-wider transition-colors flex-shrink-0 ${
-                  activeSidebarTab === 'text' || activeSidebarTab === 'captions'
-                    ? 'bg-primary/20 text-primary'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActiveSidebarTab('text');
-                  setActivePane('media-browser');
-                }}
-              >
-                <Type className="w-3 h-3" /> Text
-              </button>
-              <button
-                data-testid="tab-elements"
-                className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold uppercase tracking-wider transition-colors flex-shrink-0 ${
-                  activeSidebarTab === 'elements'
-                    ? 'bg-primary/20 text-primary'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActiveSidebarTab('elements');
-                  setActivePane('media-browser');
-                }}
-              >
-                <Layers className="w-3 h-3" /> Shapes
-              </button>
-              <button
-                data-testid="tab-effects"
-                className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold uppercase tracking-wider transition-colors flex-shrink-0 ${
-                  activeSidebarTab === 'effects'
-                    ? 'bg-primary/20 text-primary'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActiveSidebarTab('effects');
-                  setActivePane('media-browser');
-                }}
-              >
-                <Palette className="w-3 h-3" /> Effects
-              </button>
-              <button
-                data-testid="tab-audio"
-                className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold uppercase tracking-wider transition-colors flex-shrink-0 ${
-                  activeSidebarTab === 'audio'
-                    ? 'bg-primary/20 text-primary'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActiveSidebarTab('audio');
-                  setActivePane('media-browser');
-                }}
-              >
-                <Volume2 className="w-3 h-3" /> Audio
-              </button>
-            </div>
+            <CultSegmentedTabs
+              value={normalizedSidebarTab}
+              onChange={(id) => {
+                setActiveSidebarTab(id);
+                setActivePane('media-browser');
+              }}
+              items={[
+                { id: 'media', label: 'Media', icon: <Search className="w-3.5 h-3.5" />, testId: 'tab-media' },
+                { id: 'text', label: 'Text', icon: <Type className="w-3.5 h-3.5" />, testId: 'tab-text' },
+                { id: 'elements', label: 'Shapes', icon: <Layers className="w-3.5 h-3.5" />, testId: 'tab-elements' },
+                { id: 'effects', label: 'Effects', icon: <Palette className="w-3.5 h-3.5" />, testId: 'tab-effects' },
+                { id: 'audio', label: 'Audio', icon: <Volume2 className="w-3.5 h-3.5" />, testId: 'tab-audio' },
+              ]}
+            />
           }
         >
-          {activeSidebarTab === 'media' && <MediaBrowser />}
-          {(activeSidebarTab === 'text' || activeSidebarTab === 'captions') && <TextCaptionsPanel />}
-          {activeSidebarTab === 'elements' && <ElementsPanel />}
-          {activeSidebarTab === 'effects' && <EffectsPanel />}
-          {activeSidebarTab === 'audio' && <AudioPanel />}
+          {normalizedSidebarTab === 'media' && <MediaBrowser />}
+          {normalizedSidebarTab === 'text' && <TextCaptionsPanel />}
+          {normalizedSidebarTab === 'elements' && <ElementsPanel />}
+          {normalizedSidebarTab === 'effects' && <EffectsPanel />}
+          {normalizedSidebarTab === 'audio' && <AudioPanel />}
         </SidebarPane>
 
         {/* Center: Viewport + Timeline */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          <div className="flex-1 min-h-0 border-b border-border bg-black">
+          <div className="flex-1 min-h-0 border-b border-border/80 dark:border-white/[0.08] bg-zinc-950">
             <Viewport />
           </div>
           <TimelinePane />
         </div>
 
         {/* Right: Inspector */}
-        <SidebarPane paneId="inspector" title="Inspector" icon={<Settings className="w-3.5 h-3.5" />}>
+        <SidebarPane paneId="inspector" side="right" title="Inspector" icon={<Settings className="w-3.5 h-3.5" />}>
           <Inspector />
         </SidebarPane>
       </div>
@@ -271,5 +227,9 @@ function AppShell() {
 }
 
 export function App() {
-  return <AppShell />;
+  return (
+    <ErrorBoundary>
+      <AppShell />
+    </ErrorBoundary>
+  );
 }

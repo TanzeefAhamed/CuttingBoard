@@ -150,13 +150,13 @@ export function SafeAreaOverlay({
     left: `${(100 - percent) / 2}%`,
     width: `${percent}%`,
     height: `${percent}%`,
-    border: '2px dashed',
+    border: '1.5px dashed',
     borderRadius: '4px',
     pointerEvents: 'none' as const,
-  })
+  });
 
   return (
-    <div className="relative w-full h-full overflow-hidden" style={{ aspectRatio: `${width}/${height}` }}>
+    <div className="relative w-full h-full overflow-hidden pointer-events-none">
       {showActionSafe && (
         <div style={getSafeZoneStyle(93)} className="border-primary/50" title="Action Safe (93%)" />
       )}

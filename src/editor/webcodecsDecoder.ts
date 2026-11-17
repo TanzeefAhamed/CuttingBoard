@@ -61,6 +61,24 @@ export async function getWebCodecsDecoder(url: string): Promise<VideoDecoderInst
   return promise;
 }
 
+function getOrWarmFallbackVideo(url: string, timeSeconds: number): HTMLVideoElement {
+  let vid = fallbackVideos.get(url);
+  if (!vid) {
+    vid = document.createElement('video');
+    vid.src = url;
+    vid.preload = 'auto';
+    vid.muted = true;
+    vid.playsInline = true;
+    vid.crossOrigin = 'anonymous';
+    fallbackVideos.set(url, vid);
+  }
+
+  if (vid.readyState >= 1 && Math.abs(vid.currentTime - timeSeconds) > 0.05 && !vid.seeking) {
+    vid.currentTime = Math.max(0, timeSeconds);
+  }
+  return vid;
+}
+
 /**
  * Decodes a frame at the specified timestamp in seconds.
  * Returns a VideoFrame (must be closed by the caller after use) or HTMLVideoElement fallback.
@@ -69,6 +87,7 @@ export async function decodeVideoFrame(
   url: string,
   timeSeconds: number
 ): Promise<{ frame: VideoFrame | null; fallbackElement?: HTMLVideoElement }> {
+  const fallbackEl = getOrWarmFallbackVideo(url, timeSeconds);
   const dec = await getWebCodecsDecoder(url);
 
   if (dec && dec.sink) {
@@ -80,27 +99,12 @@ export async function decodeVideoFrame(
         sample.close();
         return { frame };
       }
-    } catch (e) {
+    } catch {
       // If WebCodecs sink fails or sample is null, fall through to fallback video element
     }
   }
 
-  // Fallback video element for environments without WebCodecs or on decode boundary
-  let vid = fallbackVideos.get(url);
-  if (!vid) {
-    vid = document.createElement('video');
-    vid.src = url;
-    vid.preload = 'auto';
-    vid.muted = true;
-    vid.playsInline = true;
-    fallbackVideos.set(url, vid);
-  }
-
-  if (Math.abs(vid.currentTime - timeSeconds) > 0.05 && !vid.seeking) {
-    vid.currentTime = Math.max(0, timeSeconds);
-  }
-
-  return { frame: null, fallbackElement: vid };
+  return { frame: null, fallbackElement: getOrWarmFallbackVideo(url, timeSeconds) ?? fallbackEl };
 }
 
 export function releaseDecoder(url: string) {

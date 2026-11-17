@@ -124,6 +124,7 @@ interface AppState {
   addSfxSegment: (sfxType: SfxType) => string;
   applyColorPreset: (preset: 'teal-orange' | 'vintage' | 'cyberpunk' | 'noir' | 'crisp') => void;
   updateSegmentText: (segmentId: string, text: string) => void;
+  updateSegmentMetadata: (segmentId: string, metadata: Record<string, unknown>, coalesceKey?: string) => void;
   reorderTrack: (trackId: string, direction: 'up' | 'down') => void;
   deleteSelected: () => void;
   addMediaToTimeline: (mediaId: string, opts?: { trackId?: string; start?: Microseconds }) => string | null;
@@ -220,11 +221,11 @@ export const useStore = create<AppState>()(
             settings: DEFAULT_SETTINGS,
             theme: 'system',
             canvasAspectRatio: '16:9',
-            safeArea: { actionSafe: true, titleSafe: true, tiktokSafe: false, aspectRatio: '16:9' },
+            safeArea: { actionSafe: false, titleSafe: false, tiktokSafe: false, aspectRatio: '16:9' },
           }),
 
         /* Safe areas */
-        safeArea: { actionSafe: true, titleSafe: true, tiktokSafe: false, aspectRatio: '16:9' },
+        safeArea: { actionSafe: false, titleSafe: false, tiktokSafe: false, aspectRatio: '16:9' },
         setSafeArea: (safeArea) => set({ safeArea: { ...get().safeArea, ...safeArea } }),
         canvasAspectRatio: '16:9',
         setCanvasAspectRatio: (ratio) => set({ canvasAspectRatio: ratio }),
@@ -299,12 +300,30 @@ export const useStore = create<AppState>()(
           set({ segments: next });
         },
         removeSegment: (segmentId) => {
+          const target = get().segments.get(segmentId);
+          if (!target) return;
           pushHistory();
           const next = new Map(get().segments);
           next.delete(segmentId);
+
+          if (get().rippleEnabled) {
+            const removedEnd = target.targetTimerange.start.value + target.targetTimerange.duration;
+            const gap = target.targetTimerange.duration;
+            for (const [sid, s] of next) {
+              if (s.trackId === target.trackId && s.targetTimerange.start.value >= removedEnd) {
+                const shifted = s.targetTimerange.start.value - gap;
+                next.set(sid, {
+                  ...s,
+                  targetTimerange: new TimeRange(new TimePoint(µs(shifted < 0n ? 0n : shifted)), s.targetTimerange.duration),
+                });
+              }
+            }
+          }
+
           set({
             segments: next,
             selectedSegment: get().selectedSegment === segmentId ? null : get().selectedSegment,
+            isPlaying: next.size === 0 ? false : get().isPlaying,
           });
         },
         updateSegment: (segmentId, updates, coalesceKey) => {
@@ -346,10 +365,24 @@ export const useStore = create<AppState>()(
             playhead > s.targetTimerange.start.value &&
             playhead < s.targetTimerange.start.value + s.targetTimerange.duration;
           let target = selectedSegment ? segments.get(selectedSegment) : undefined;
-          if (!target || !contains(target)) target = Array.from(segments.values()).find(contains);
-          if (!target) return false;
-          get().splitSegment(target.id, playhead);
-          return true;
+          if (target && contains(target)) {
+            get().splitSegment(target.id, playhead);
+            return true;
+          }
+          target = Array.from(segments.values()).find(contains);
+          if (target) {
+            get().splitSegment(target.id, playhead);
+            return true;
+          }
+          // Fallback: if playhead sits on an edge (e.g., 00:00.00) or outside clips, split the selected clip at its midpoint
+          const sel = selectedSegment ? segments.get(selectedSegment) : undefined;
+          if (sel && sel.targetTimerange.duration >= MIN_CLIP_US * 2n) {
+            const mid = (sel.targetTimerange.start.value + sel.targetTimerange.duration / 2n) as Microseconds;
+            get().splitSegment(sel.id, mid);
+            set({ playhead: mid });
+            return true;
+          }
+          return false;
         },
         deleteSelected: () => {
           const id = get().selectedSegment;
@@ -383,20 +416,34 @@ export const useStore = create<AppState>()(
           let tracks = get().tracks;
           let track = opts?.trackId ? tracks.find((t) => t.id === opts.trackId) : undefined;
           if (!track || track.locked) {
-            track = tracks.find((t) => t.type === 'text' && !t.locked) || tracks.find((t) => t.type === 'video' && !t.locked);
+            track = tracks.find((t) => t.type === 'text' && !t.locked);
           }
           if (!track) {
             track = createTrack({
               id: `track-${crypto.randomUUID().slice(0, 8)}`,
               name: `Text ${tracks.filter((t) => t.type === 'text').length + 1}`,
               type: 'text',
-              order: tracks.length,
+              order: 0,
             });
-            tracks = [...tracks, track];
+            // Place text track above video tracks so overlays composite visibly on top
+            tracks = [track, ...tracks].map((t, i) => ({ ...t, order: i }));
           }
 
           const duration = opts?.duration ?? µs(3_000_000n);
-          const start = opts?.start ?? get().playhead;
+          const findFreeStart = (trackId: string, desired: Microseconds, dur: Microseconds): Microseconds => {
+            let s0 = desired < 0n ? 0n : desired;
+            let maxEnd = 0n;
+            let overlaps = false;
+            for (const existing of get().segments.values()) {
+              if (existing.trackId !== trackId) continue;
+              const a = existing.targetTimerange.start.value;
+              const b = a + existing.targetTimerange.duration;
+              if (b > maxEnd) maxEnd = b;
+              if (s0 < b && s0 + dur > a) overlaps = true;
+            }
+            return (overlaps ? maxEnd : s0) as Microseconds;
+          };
+          const start = opts?.start !== undefined ? opts.start : findFreeStart(track.id, get().playhead, duration);
           const id = `seg-${crypto.randomUUID().slice(0, 8)}`;
           const segment = createSegment({
             id,
@@ -411,7 +458,7 @@ export const useStore = create<AppState>()(
               type: 'text',
               url: 'data:text/plain,' + encodeURIComponent(text),
               duration,
-              metadata: { text, fontSize: 44, color: '#ffffff', fontFamily: 'Inter' },
+              metadata: { name: text, text, fontSize: 44, color: '#ffffff', fontFamily: 'Inter' },
             },
           });
 
@@ -427,19 +474,35 @@ export const useStore = create<AppState>()(
         addShapeSegment: (shapeType = 'rectangle', label) => {
           pushHistory();
           let tracks = get().tracks;
-          let track = tracks.find((t) => t.type === 'video' && !t.locked);
+          let track = tracks.find((t) => t.type === 'video' && !t.isPrimary && !t.locked);
           if (!track) {
+            const primaryIdx = tracks.findIndex((t) => t.type === 'video');
             track = createTrack({
               id: `track-${crypto.randomUUID().slice(0, 8)}`,
-              name: `Video ${tracks.filter((t) => t.type === 'video').length + 1}`,
+              name: `Overlay ${tracks.filter((t) => t.type === 'video' && !t.isPrimary).length + 1}`,
               type: 'video',
-              order: tracks.length,
+              isPrimary: false,
+              order: 0,
             });
-            tracks = [...tracks, track];
+            const insertAt = primaryIdx >= 0 ? primaryIdx : 0;
+            const copy = [...tracks];
+            copy.splice(insertAt, 0, track);
+            tracks = copy.map((t, i) => ({ ...t, order: i }));
           }
 
           const duration = µs(4_000_000n);
-          const start = get().playhead;
+          let start: Microseconds = (get().playhead < 0n ? 0n : get().playhead) as Microseconds;
+          let maxEnd = 0n;
+          let overlaps = false;
+          for (const existing of get().segments.values()) {
+            if (existing.trackId !== track.id) continue;
+            const a = existing.targetTimerange.start.value;
+            const b = a + existing.targetTimerange.duration;
+            if (b > maxEnd) maxEnd = b;
+            if (start < b && start + duration > a) overlaps = true;
+          }
+          if (overlaps) start = maxEnd as Microseconds;
+
           const id = `seg-${crypto.randomUUID().slice(0, 8)}`;
           const segment = createSegment({
             id,
@@ -497,7 +560,18 @@ export const useStore = create<AppState>()(
             tracks = [...tracks, track];
           }
 
-          const start = get().playhead;
+          let start: Microseconds = (get().playhead < 0n ? 0n : get().playhead) as Microseconds;
+          let maxEnd = 0n;
+          let overlaps = false;
+          for (const existing of get().segments.values()) {
+            if (existing.trackId !== track.id) continue;
+            const a = existing.targetTimerange.start.value;
+            const b = a + existing.targetTimerange.duration;
+            if (b > maxEnd) maxEnd = b;
+            if (start < b && start + durUs > a) overlaps = true;
+          }
+          if (overlaps) start = maxEnd as Microseconds;
+
           const id = `seg-${crypto.randomUUID().slice(0, 8)}`;
           const segment = createSegment({
             id,
@@ -507,7 +581,13 @@ export const useStore = create<AppState>()(
             targetDuration: durUs,
             sourceStart: TimePoint.zero(),
             sourceDuration: durUs,
-            media: sfxItem,
+            media: {
+              id: sfxItem.id,
+              type: 'audio',
+              url: sfxItem.url,
+              duration: durUs,
+              metadata: { name: sfxItem.name },
+            },
           });
 
           const next = new Map(get().segments);
@@ -580,20 +660,24 @@ export const useStore = create<AppState>()(
           set({ segments: next });
         },
         updateSegmentText: (segmentId, text) => {
+          get().updateSegmentMetadata(segmentId, { text, name: text }, 'text-edit');
+        },
+        updateSegmentMetadata: (segmentId, metadata, coalesceKey) => {
           const seg = get().segments.get(segmentId);
           if (!seg) return;
-          const next = new Map(get().segments);
-          next.set(segmentId, {
-            ...seg,
-            media: {
-              ...seg.media,
-              metadata: {
-                ...seg.media.metadata,
-                text,
+          get().updateSegment(
+            segmentId,
+            {
+              media: {
+                ...seg.media,
+                metadata: {
+                  ...seg.media.metadata,
+                  ...metadata,
+                },
               },
             },
-          });
-          set({ segments: next });
+            coalesceKey ?? 'metadata',
+          );
         },
         reorderTrack: (trackId, direction) => {
           const tracks = [...get().tracks];
@@ -754,7 +838,7 @@ export const useStore = create<AppState>()(
             future: [...get().future, snapshot()],
             tracks: prev.tracks,
             segments: prev.segments,
-            selectedSegment: sel && prev.segments.has(sel) ? sel : null,
+            selectedSegment: sel && prev.segments.has(sel) ? sel : (Array.from(prev.segments.keys()).pop() ?? null),
           });
           lastEdit = null;
         },

@@ -3,15 +3,14 @@ import { useStore } from '../store';
 import {
   Play, Pause, SkipBack, SkipForward, Undo2, Redo2, ZoomIn, ZoomOut, Save, Download,
   HelpCircle, Scissors, Trash2, Settings as SettingsIcon, FilePlus, ChevronLeft, ChevronRight,
-  Magnet, Link2, Check,
+  Magnet, Link2, Copy,
 } from 'lucide-react';
 import type { Microseconds } from '../core/timeline/types';
 import type { AspectRatio } from '../store';
 import { saveProject } from '../editor/useEditorEffects';
+import { TextureButton } from './ui/cult';
 
 const FRAME_US = 33_333n;
-
-const btn = 'p-1.5 rounded-md hover:bg-accent transition-colors disabled:opacity-30 disabled:pointer-events-none text-muted-foreground hover:text-foreground';
 
 export function Toolbar() {
   const projectName = useStore((s) => s.projectName);
@@ -29,8 +28,10 @@ export function Toolbar() {
   const undo = useStore((s) => s.undo);
   const redo = useStore((s) => s.redo);
   const hasClips = useStore((s) => s.segments.size > 0);
-  const hasSelection = useStore((s) => s.selectedSegment !== null);
+  const selectedSegment = useStore((s) => s.selectedSegment);
+  const hasSelection = selectedSegment !== null;
   const splitAtPlayhead = useStore((s) => s.splitAtPlayhead);
+  const duplicateSegment = useStore((s) => s.duplicateSegment);
   const deleteSelected = useStore((s) => s.deleteSelected);
   const clearProject = useStore((s) => s.clearProject);
   const openDialog = useStore((s) => s.openDialog);
@@ -47,11 +48,14 @@ export function Toolbar() {
   const step = (dir: 1 | -1) => setPlayhead((playhead + BigInt(dir) * FRAME_US) as Microseconds);
 
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-card sticky top-0 z-40 select-none" data-testid="toolbar">
+    <div
+      className="flex items-center gap-2 px-3 py-1.5 border-b border-border/80 dark:border-white/[0.08] bg-card/95 dark:bg-zinc-950/90 backdrop-blur-md sticky top-0 z-40 select-none overflow-x-auto scrollbar-hide"
+      data-testid="toolbar"
+    >
       {/* Brand & Project Name */}
-      <div className="flex items-center gap-2 mr-2">
+      <div className="flex items-center gap-2 flex-shrink-0">
         <div className="flex items-center gap-1.5">
-          <div className="w-5 h-5 rounded bg-primary flex items-center justify-center font-bold text-[11px] text-primary-foreground shadow-sm">
+          <div className="w-6 h-6 rounded-lg bg-gradient-to-b from-blue-500 to-blue-600 flex items-center justify-center font-bold text-[11px] text-white shadow-[inset_0_1px_0_0_rgba(255,255,255,0.35),0_2px_8px_rgba(59,130,246,0.45)]">
             CB
           </div>
           <span className="font-semibold text-xs tracking-tight hidden sm:inline">CuttingBoard</span>
@@ -74,148 +78,145 @@ export function Toolbar() {
               }
             }}
             autoFocus
-            className="px-1.5 py-0.5 text-xs bg-input border border-primary rounded max-w-[140px] text-foreground font-medium"
+            className="px-2 py-0.5 text-xs bg-input border border-primary rounded-md max-w-[140px] text-foreground font-medium"
           />
         ) : (
-          <span
+          <button
+            type="button"
             onClick={() => {
               setTitleDraft(projectName);
               setIsEditingTitle(true);
             }}
-            className="text-xs font-medium text-foreground hover:bg-accent/60 px-1.5 py-0.5 rounded cursor-pointer max-w-[140px] truncate"
+            className="text-xs font-medium text-foreground hover:bg-accent/60 px-2 py-1 rounded-md cursor-pointer max-w-[140px] truncate border border-transparent hover:border-border/60 transition-colors"
             title="Click to rename project"
             data-testid="project-title-btn"
           >
             {projectName}
-          </span>
+          </button>
         )}
 
-        {/* Saved status indicator */}
-        <span className="flex items-center gap-1 text-[10px] text-emerald-500 font-mono hidden md:flex">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+        <span className="items-center gap-1 text-[10px] text-emerald-500 font-mono hidden lg:flex px-1.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
           Saved
         </span>
       </div>
 
-      <div className="w-px h-5 bg-border" />
+      <div className="w-px h-5 bg-border/80 flex-shrink-0" />
 
-      {/* Undo / Redo */}
-      <div className="flex items-center gap-0.5">
-        <button className={btn} title="New project" aria-label="New project" onClick={() => hasClips ? window.confirm('Clear the timeline? (can be undone)') && clearProject() : clearProject()}>
-          <FilePlus className="w-4 h-4" />
-        </button>
-        <button className={btn} title="Undo (Ctrl+Z)" aria-label="Undo" disabled={!canUndo} onClick={undo}>
-          <Undo2 className="w-4 h-4" />
-        </button>
-        <button className={btn} title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled={!canRedo} onClick={redo}>
-          <Redo2 className="w-4 h-4" />
-        </button>
+      {/* History */}
+      <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-muted/40 dark:bg-zinc-900/90 border border-border/60 dark:border-white/[0.06] flex-shrink-0">
+        <TextureButton variant="ghost" size="icon" title="New project" aria-label="New project" onClick={() => (hasClips ? window.confirm('Clear the timeline? (can be undone)') && clearProject() : clearProject())}>
+          <FilePlus className="w-3.5 h-3.5" />
+        </TextureButton>
+        <TextureButton variant="ghost" size="icon" title="Undo (Ctrl+Z)" aria-label="Undo" disabled={!canUndo} onClick={undo}>
+          <Undo2 className="w-3.5 h-3.5" />
+        </TextureButton>
+        <TextureButton variant="ghost" size="icon" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled={!canRedo} onClick={redo}>
+          <Redo2 className="w-3.5 h-3.5" />
+        </TextureButton>
       </div>
 
-      <div className="w-px h-5 bg-border" />
-
-      {/* Playback Controls */}
-      <div className="flex items-center gap-0.5">
-        <button className={btn} title="Go to start (Home)" aria-label="Go to start" onClick={() => setPlayhead(0n as Microseconds)}>
-          <SkipBack className="w-4 h-4" />
-        </button>
-        <button className={btn} title="Previous frame (←)" aria-label="Previous frame" onClick={() => step(-1)}>
-          <ChevronLeft className="w-4 h-4" />
-        </button>
-        <button
-          className={`${btn} ${isPlaying ? 'bg-primary text-primary-foreground hover:bg-primary' : ''}`}
+      {/* Transport */}
+      <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-muted/40 dark:bg-zinc-900/90 border border-border/60 dark:border-white/[0.06] flex-shrink-0">
+        <TextureButton variant="ghost" size="icon" title="Go to start (Home)" aria-label="Go to start" onClick={() => setPlayhead(0n as Microseconds)}>
+          <SkipBack className="w-3.5 h-3.5" />
+        </TextureButton>
+        <TextureButton variant="ghost" size="icon" title="Previous frame (←)" aria-label="Previous frame" onClick={() => step(-1)}>
+          <ChevronLeft className="w-3.5 h-3.5" />
+        </TextureButton>
+        <TextureButton
+          variant={isPlaying ? 'primary' : 'ghost'}
+          size="icon"
           title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
           aria-label={isPlaying ? 'Pause' : 'Play'}
           disabled={!hasClips}
           onClick={() => setIsPlaying(!isPlaying)}
         >
-          {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-        </button>
-        <button className={btn} title="Next frame (→)" aria-label="Next frame" onClick={() => step(1)}>
-          <ChevronRight className="w-4 h-4" />
-        </button>
-        <button className={btn} title="Go to end (End)" aria-label="Go to end" onClick={() => setPlayhead(useStore.getState().getDuration())}>
-          <SkipForward className="w-4 h-4" />
-        </button>
+          {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+        </TextureButton>
+        <TextureButton variant="ghost" size="icon" title="Next frame (→)" aria-label="Next frame" onClick={() => step(1)}>
+          <ChevronRight className="w-3.5 h-3.5" />
+        </TextureButton>
+        <TextureButton variant="ghost" size="icon" title="Go to end (End)" aria-label="Go to end" onClick={() => setPlayhead(useStore.getState().getDuration())}>
+          <SkipForward className="w-3.5 h-3.5" />
+        </TextureButton>
       </div>
 
-      <div className="w-px h-5 bg-border" />
-
-      {/* Edit tools: Split, Delete, Snap, Ripple */}
-      <div className="flex items-center gap-0.5">
-        <button className={btn} title="Split at playhead (Ctrl+B)" aria-label="Split" disabled={!hasClips} onClick={splitAtPlayhead}>
-          <Scissors className="w-4 h-4" />
-        </button>
-        <button className={btn} title="Delete selected (Del)" aria-label="Delete selected" disabled={!hasSelection} onClick={deleteSelected}>
-          <Trash2 className="w-4 h-4" />
-        </button>
-        <button
-          className={`${btn} ${snapEnabled ? 'text-primary bg-primary/10' : ''}`}
+      {/* Edit tools: Split, Duplicate, Delete, Snap, Ripple */}
+      <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-muted/40 dark:bg-zinc-900/90 border border-border/60 dark:border-white/[0.06] flex-shrink-0">
+        <TextureButton variant="ghost" size="icon" title="Split at playhead (Ctrl+B)" aria-label="Split" disabled={!hasClips} onClick={splitAtPlayhead}>
+          <Scissors className="w-3.5 h-3.5" />
+        </TextureButton>
+        <TextureButton variant="ghost" size="icon" title="Duplicate selected (Ctrl+D)" aria-label="Duplicate" disabled={!hasSelection} onClick={() => selectedSegment && duplicateSegment(selectedSegment)}>
+          <Copy className="w-3.5 h-3.5" />
+        </TextureButton>
+        <TextureButton variant="ghost" size="icon" title="Delete selected (Del)" aria-label="Delete selected" disabled={!hasSelection} onClick={deleteSelected}>
+          <Trash2 className="w-3.5 h-3.5" />
+        </TextureButton>
+        <TextureButton
+          variant={snapEnabled ? 'active' : 'ghost'}
+          size="icon"
           title={snapEnabled ? 'Snapping: ON (S)' : 'Snapping: OFF (S)'}
+          aria-label="Toggle snapping"
           onClick={() => setSettings({ snapEnabled: !snapEnabled })}
         >
-          <Magnet className="w-4 h-4" />
-        </button>
-        <button
-          className={`${btn} ${rippleEnabled ? 'text-primary bg-primary/10' : ''}`}
+          <Magnet className="w-3.5 h-3.5" />
+        </TextureButton>
+        <TextureButton
+          variant={rippleEnabled ? 'active' : 'ghost'}
+          size="icon"
           title={rippleEnabled ? 'Ripple Edit: ON' : 'Ripple Edit: OFF'}
+          aria-label="Toggle ripple edit"
           onClick={() => setRippleEnabled(!rippleEnabled)}
         >
-          <Link2 className="w-4 h-4" />
-        </button>
+          <Link2 className="w-3.5 h-3.5" />
+        </TextureButton>
       </div>
-
-      <div className="w-px h-5 bg-border" />
 
       {/* Aspect Ratio Quick Preset */}
-      <div className="flex items-center gap-1">
-        <select
-          aria-label="Canvas aspect ratio"
-          value={canvasAspectRatio}
-          onChange={(e) => setCanvasAspectRatio(e.target.value as AspectRatio)}
-          className="text-xs bg-muted/60 border border-border rounded px-2 py-1 text-foreground font-medium cursor-pointer hover:bg-muted"
-          data-testid="aspect-ratio-select"
-        >
-          <option value="16:9">16:9 (YouTube)</option>
-          <option value="9:16">9:16 (Shorts/TikTok)</option>
-          <option value="1:1">1:1 (Square)</option>
-          <option value="4:3">4:3 (Classic)</option>
-          <option value="21:9">21:9 (Ultrawide)</option>
-        </select>
-      </div>
-
-      <div className="w-px h-5 bg-border" />
+      <select
+        aria-label="Canvas aspect ratio"
+        value={canvasAspectRatio}
+        onChange={(e) => setCanvasAspectRatio(e.target.value as AspectRatio)}
+        className="text-xs bg-muted/60 dark:bg-zinc-900 border border-border/80 dark:border-white/[0.08] rounded-lg px-2 py-1 text-foreground font-medium cursor-pointer hover:bg-muted flex-shrink-0"
+        data-testid="aspect-ratio-select"
+      >
+        <option value="16:9">16:9</option>
+        <option value="9:16">9:16</option>
+        <option value="1:1">1:1</option>
+        <option value="4:3">4:3</option>
+        <option value="21:9">21:9</option>
+      </select>
 
       {/* Zoom controls */}
-      <div className="flex items-center gap-0.5">
-        <button className={btn} title="Zoom Out" aria-label="Zoom out" onClick={() => setZoom(zoom / 1.25)}>
-          <ZoomOut className="w-4 h-4" />
-        </button>
-        <span className="px-1 text-[11px] text-muted-foreground font-mono w-12 text-center">{Math.round(zoom * 100)}%</span>
-        <button className={btn} title="Zoom In" aria-label="Zoom in" onClick={() => setZoom(zoom * 1.25)}>
-          <ZoomIn className="w-4 h-4" />
-        </button>
+      <div className="hidden xl:flex items-center gap-0.5 p-0.5 rounded-lg bg-muted/40 dark:bg-zinc-900/90 border border-border/60 dark:border-white/[0.06] flex-shrink-0">
+        <TextureButton variant="ghost" size="icon" title="Zoom Out" aria-label="Zoom out" onClick={() => setZoom(zoom / 1.25)}>
+          <ZoomOut className="w-3.5 h-3.5" />
+        </TextureButton>
+        <span className="px-1 text-[11px] text-muted-foreground font-mono w-11 text-center">{Math.round(zoom * 100)}%</span>
+        <TextureButton variant="ghost" size="icon" title="Zoom In" aria-label="Zoom in" onClick={() => setZoom(zoom * 1.25)}>
+          <ZoomIn className="w-3.5 h-3.5" />
+        </TextureButton>
       </div>
 
       <div className="flex-1" />
 
-      {/* Export progress indicator */}
       {isExporting && (
-        <span className="text-[11px] font-mono text-primary flex items-center gap-1.5 mr-2" data-testid="export-progress">
+        <span className="text-[11px] font-mono text-primary flex items-center gap-1.5 mr-2 flex-shrink-0" data-testid="export-progress">
           <span className="w-2 h-2 rounded-full bg-primary animate-ping" />
           Exporting {Math.round(exportProgress)}%
         </span>
       )}
 
       {/* Right Action Buttons */}
-      <div className="flex items-center gap-1.5">
-        <button className={btn} title="Save project (Ctrl+S)" aria-label="Save project" onClick={saveProject}>
-          <Save className="w-4 h-4" />
-        </button>
+      <div className="flex items-center gap-1.5 flex-shrink-0">
+        <TextureButton variant="secondary" size="icon" title="Save project (Ctrl+S)" aria-label="Save project" onClick={saveProject}>
+          <Save className="w-3.5 h-3.5" />
+        </TextureButton>
 
-        {/* High-contrast Prominent Render / Export Button */}
-        <button
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm transition-all"
+        <TextureButton
+          variant="primary"
+          size="sm"
           title="Export Video (Ctrl+E)"
           aria-label="Export"
           onClick={() => openDialog('export')}
@@ -223,14 +224,14 @@ export function Toolbar() {
         >
           <Download className="w-3.5 h-3.5" />
           <span>Export</span>
-        </button>
+        </TextureButton>
 
-        <button className={btn} title="Settings" aria-label="Settings" onClick={() => openDialog('settings')}>
-          <SettingsIcon className="w-4 h-4" />
-        </button>
-        <button className={btn} title="Keyboard shortcuts & help (F1)" aria-label="Help" onClick={() => openDialog('help')}>
-          <HelpCircle className="w-4 h-4" />
-        </button>
+        <TextureButton variant="ghost" size="icon" title="Settings" aria-label="Settings" onClick={() => openDialog('settings')}>
+          <SettingsIcon className="w-3.5 h-3.5" />
+        </TextureButton>
+        <TextureButton variant="ghost" size="icon" title="Keyboard shortcuts & help (F1)" aria-label="Help" onClick={() => openDialog('help')}>
+          <HelpCircle className="w-3.5 h-3.5" />
+        </TextureButton>
       </div>
     </div>
   );

@@ -4,12 +4,11 @@ import {
   Volume2,
   Mic,
   Square,
-  Play,
   Plus,
-  Sparkles,
   Radio,
 } from 'lucide-react';
 import type { SfxType } from '../editor/sfxGenerator';
+import { TextureButton, TextureCard } from './ui/cult';
 
 interface SfxItem {
   id: SfxType;
@@ -128,7 +127,7 @@ export function AudioPanel() {
 
       <div className="flex-1 overflow-y-auto p-3 space-y-4">
         {/* Voiceover Recording Card */}
-        <div className="p-3 rounded-lg border border-border bg-card/60 space-y-2">
+        <TextureCard className="p-3 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
               <Radio className="w-3.5 h-3.5 text-rose-500 animate-pulse" /> Voice-Over Studio
@@ -140,25 +139,29 @@ export function AudioPanel() {
           </p>
 
           {isRecording ? (
-            <button
+            <TextureButton
               onClick={stopVoiceRecording}
               data-testid="stop-voiceover-btn"
-              className="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 text-xs font-medium transition-colors"
+              variant="destructive"
+              size="sm"
+              className="w-full"
             >
               <Square className="w-3.5 h-3.5 fill-current" />
               Stop Recording ({recordDuration}s)
-            </button>
+            </TextureButton>
           ) : (
-            <button
+            <TextureButton
               onClick={startVoiceRecording}
               data-testid="record-voiceover-btn"
-              className="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-medium transition-colors"
+              variant="primary"
+              size="sm"
+              className="w-full"
             >
               <Mic className="w-3.5 h-3.5" />
               Record Voice-Over
-            </button>
+            </TextureButton>
           )}
-        </div>
+        </TextureCard>
 
         {/* Royalty-free Sound Effects list */}
         <div>
@@ -168,33 +171,36 @@ export function AudioPanel() {
           </h4>
           <div className="space-y-2">
             {SFX_LIST.map((sfx) => (
-              <div
+              <TextureCard
                 key={sfx.id}
+                interactive
                 data-testid={`sfx-${sfx.id}`}
-                className="flex items-center justify-between p-2.5 rounded-lg border border-border bg-card/60 hover:bg-accent/40 transition-colors"
+                className="flex items-center justify-between gap-2 p-2"
               >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-7 h-7 rounded-md bg-muted flex items-center justify-center flex-shrink-0 text-amber-500">
-                    <Volume2 className="w-4 h-4" />
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <div className="w-6 h-6 rounded-md bg-muted/80 border border-border/60 flex items-center justify-center flex-shrink-0 text-amber-500">
+                    <Volume2 className="w-3.5 h-3.5" />
                   </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-medium text-foreground truncate">{sfx.name}</span>
-                      <span className="text-[9px] px-1 py-0.2 rounded bg-muted text-muted-foreground font-mono">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-medium text-foreground truncate">{sfx.name}</div>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className="text-[9px] px-1 py-0.2 rounded bg-muted text-muted-foreground font-mono flex-shrink-0">
                         {sfx.badge}
                       </span>
+                      <span className="text-[10px] text-muted-foreground truncate">{sfx.description}</span>
                     </div>
-                    <div className="text-[10px] text-muted-foreground truncate">{sfx.description}</div>
                   </div>
                 </div>
-                <button
+                <TextureButton
+                  size="xs"
+                  variant="secondary"
                   onClick={() => addSfxSegment(sfx.id)}
-                  className="px-2 py-1 text-xs font-medium rounded bg-muted hover:bg-primary hover:text-primary-foreground transition-colors flex items-center gap-1 flex-shrink-0"
                   title="Add to timeline"
+                  className="flex-shrink-0"
                 >
                   <Plus className="w-3 h-3" /> Add
-                </button>
-              </div>
+                </TextureButton>
+              </TextureCard>
             ))}
           </div>
         </div>

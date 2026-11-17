@@ -7,8 +7,8 @@ type PoolEl = HTMLVideoElement | HTMLAudioElement | HTMLImageElement;
 
 const pool = new Map<string, PoolEl>();
 
-export function getMedia(url: string, type: 'video' | 'audio' | 'image' | 'text'): PoolEl | null {
-  if (type === 'text') return null;
+export function getMedia(url: string, type: 'video' | 'audio' | 'image' | 'text' | 'shape'): PoolEl | null {
+  if (type === 'text' || type === 'shape') return null;
   const key = `${type}:${url}`;
   let el = pool.get(key);
   if (el) return el;

@@ -1,13 +1,13 @@
 import React from 'react';
 import { useStore } from '../store';
+import { DEFAULT_FILTERS } from '../core/timeline/segment';
 import {
   Sparkles,
   Palette,
-  Eye,
   Sliders,
   Check,
-  Zap,
 } from 'lucide-react';
+import { TextureCard } from './ui/cult';
 
 interface LookPreset {
   id: 'teal-orange' | 'vintage' | 'cyberpunk' | 'noir' | 'crisp';
@@ -77,6 +77,7 @@ export function EffectsPanel() {
     const cur = segment.filters?.effect;
     updateSegment(selectedSegment, {
       filters: {
+        ...DEFAULT_FILTERS,
         ...segment.filters,
         effect: cur === 'grayscale' ? 'none' : 'grayscale',
       },
@@ -106,18 +107,19 @@ export function EffectsPanel() {
           </h4>
           <div className="space-y-2">
             {LOOKS.map((look) => (
-              <div
+              <TextureCard
                 key={look.id}
+                interactive
                 data-testid={`look-${look.id}`}
                 onClick={() => applyColorPreset(look.id)}
-                className={`p-2.5 rounded-lg border border-border bg-card/60 hover:border-primary/60 transition-all cursor-pointer ${
-                  !segment ? 'opacity-50 pointer-events-none' : ''
+                className={`p-2.5 cursor-pointer ${
+                  !segment ? 'opacity-45 pointer-events-none' : ''
                 }`}
               >
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-2">
                     <div
-                      className="w-4 h-4 rounded-full border border-white/20 shadow-sm flex-shrink-0"
+                      className="w-4 h-4 rounded-full border border-white/25 shadow-sm flex-shrink-0"
                       style={{
                         background: `linear-gradient(135deg, ${look.previewColors[0]}, ${look.previewColors[1]})`,
                       }}
@@ -129,7 +131,7 @@ export function EffectsPanel() {
                   </span>
                 </div>
                 <p className="text-[10px] text-muted-foreground">{look.description}</p>
-              </div>
+              </TextureCard>
             ))}
           </div>
         </div>

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useStore } from '../store';
 import { Type, Sparkles, Wand2, Plus, Trash2, Copy, Play } from 'lucide-react';
 import type { Microseconds } from '../core/timeline/types';
+import { TextureButton, TextureCard } from './ui/cult';
 
 function formatTc(us: number | bigint): string {
   const total = Number(us) / 1_000_000;
@@ -59,50 +60,56 @@ export function TextCaptionsPanel() {
   return (
     <div className="flex flex-col h-full bg-card overflow-hidden" data-testid="text-captions-panel">
       {/* Quick Add Section */}
-      <div className="p-3 border-b border-border space-y-2">
+      <div className="p-3 border-b border-border/80 space-y-2">
         <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
           <Type className="w-3.5 h-3.5 text-primary" /> Add Text & Titles
         </div>
         <div className="grid grid-cols-2 gap-1.5">
-          <button
+          <TextureButton
             data-testid="add-basic-text-btn"
+            variant="secondary"
+            size="sm"
             onClick={() => addTextSegment('Your Text Here')}
-            className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md bg-muted hover:bg-accent text-foreground transition-colors"
           >
             <Plus className="w-3.5 h-3.5" /> Basic Text
-          </button>
-          <button
+          </TextureButton>
+          <TextureButton
             data-testid="add-title-text-btn"
+            variant="secondary"
+            size="sm"
             onClick={() => addTextSegment('Heading Title')}
-            className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md bg-muted hover:bg-accent text-foreground transition-colors"
           >
             <Plus className="w-3.5 h-3.5" /> Heading
-          </button>
+          </TextureButton>
         </div>
       </div>
 
       {/* Auto-Captions Section */}
-      <div className="p-3 border-b border-border space-y-2 bg-muted/20">
-        <div className="flex items-center justify-between">
-          <div className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Auto-Captions
+      <div className="p-3 border-b border-border/80">
+        <TextureCard className="p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Auto-Captions
+            </div>
+            <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-mono">
+              whisper.cpp WASM
+            </span>
           </div>
-          <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-mono">
-            whisper.cpp WASM
-          </span>
-        </div>
-        <p className="text-[11px] text-muted-foreground">
-          Automatically transcribe speech from timeline video and audio into subtitle cues.
-        </p>
-        <button
-          data-testid="generate-auto-captions-btn"
-          onClick={handleGenerateCaptions}
-          disabled={isGenerating}
-          className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
-        >
-          <Wand2 className="w-3.5 h-3.5" />
-          {isGenerating ? 'Transcribing with whisper.cpp...' : 'Generate Auto-Captions'}
-        </button>
+          <p className="text-[11px] text-muted-foreground">
+            Automatically transcribe speech from timeline video and audio into subtitle cues.
+          </p>
+          <TextureButton
+            data-testid="generate-auto-captions-btn"
+            variant="primary"
+            size="sm"
+            onClick={handleGenerateCaptions}
+            disabled={isGenerating}
+            className="w-full"
+          >
+            <Wand2 className="w-3.5 h-3.5" />
+            {isGenerating ? 'Transcribing with whisper.cpp...' : 'Generate Auto-Captions'}
+          </TextureButton>
+        </TextureCard>
       </div>
 
       {/* Captions List & Inline Editor */}

@@ -126,4 +126,36 @@ describe('editor store wiring', () => {
     expect(seg.colorGrade?.tint).toBe(-5);
     expect(seg.colorGrade?.lift?.b).toBe(1.15);
   });
+
+  it('splits selected segment at midpoint when playhead is at edge', () => {
+    const id = useStore.getState().addMediaToTimeline('m1')!;
+    useStore.getState().setPlayhead(0n as any);
+    useStore.getState().setSelectedSegment(id);
+    expect(useStore.getState().splitAtPlayhead()).toBe(true);
+    expect(useStore.getState().segments.size).toBe(2);
+    expect(useStore.getState().playhead).toBe(5_000_000n);
+  });
+
+  it('deletes selected segment cleanly and shifts remaining when rippleEnabled is true', () => {
+    const a = useStore.getState().addMediaToTimeline('m1')!;
+    const b = useStore.getState().addMediaToTimeline('m2')!;
+    useStore.getState().setRippleEnabled(true);
+    useStore.getState().setSelectedSegment(a);
+    useStore.getState().deleteSelected();
+
+    const segs = useStore.getState().segments;
+    expect(segs.has(a)).toBe(false);
+    expect(segs.has(b)).toBe(true);
+    expect(segs.get(b)!.targetTimerange.start.value).toBe(0n);
+    expect(useStore.getState().selectedSegment).toBeNull();
+    useStore.getState().setRippleEnabled(false);
+  });
+
+  it('updates text and shape metadata cleanly via updateSegmentMetadata', () => {
+    const textId = useStore.getState().addTextSegment('Title');
+    useStore.getState().updateSegmentMetadata(textId, { fontSize: 72, color: '#ef4444' }, 'text-style');
+    const updated = useStore.getState().segments.get(textId)!;
+    expect(updated.media.metadata?.fontSize).toBe(72);
+    expect(updated.media.metadata?.color).toBe('#ef4444');
+  });
 });

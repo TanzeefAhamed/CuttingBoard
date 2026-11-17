@@ -82,6 +82,9 @@ export function useEditorEffects() {
       if (s.segments !== prev.segments || s.mediaItems !== prev.mediaItems) {
         const live = new Set<string>();
         s.mediaItems.forEach((m) => live.add(m.url));
+        s.segments.forEach((seg) => {
+          if (seg.media?.url) live.add(seg.media.url);
+        });
         releaseUnused(live);
       }
     });
@@ -125,6 +128,9 @@ export function useEditorEffects() {
       } else if (mod && e.code === 'KeyB') {
         e.preventDefault();
         st.splitAtPlayhead();
+      } else if (mod && e.code === 'KeyD') {
+        e.preventDefault();
+        if (st.selectedSegment) st.duplicateSegment(st.selectedSegment);
       } else if (mod && e.code === 'KeyS') {
         e.preventDefault();
         saveProject();
@@ -139,6 +145,12 @@ export function useEditorEffects() {
       } else if (e.code === 'Space') {
         e.preventDefault();
         st.setIsPlaying(!st.isPlaying);
+      } else if (e.code === 'KeyV') {
+        st.setActiveTool('select');
+      } else if (e.code === 'KeyC') {
+        st.setActiveTool('razor');
+      } else if (e.code === 'KeyS') {
+        st.setSettings({ snapEnabled: !st.settings.snapEnabled });
       } else if (e.code === 'Delete' || e.code === 'Backspace') {
         e.preventDefault();
         st.deleteSelected();

@@ -9,6 +9,7 @@ import {
   Plus,
   Layers,
 } from 'lucide-react';
+import { TextureButton, TextureCard } from './ui/cult';
 
 interface ElementItem {
   id: string;
@@ -86,13 +87,14 @@ export function ElementsPanel() {
           </h4>
           <div className="grid grid-cols-1 gap-2">
             {ELEMENTS.filter((e) => e.category === 'shapes').map((item) => (
-              <div
+              <TextureCard
                 key={item.id}
+                interactive
                 data-testid={`element-${item.id}`}
-                className="flex items-center justify-between p-2.5 rounded-lg border border-border bg-card/60 hover:bg-accent/40 transition-colors group"
+                className="flex items-center justify-between p-2.5"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-8 h-8 rounded-md bg-muted flex items-center justify-center flex-shrink-0">
+                  <div className="w-8 h-8 rounded-lg bg-muted/80 border border-border/60 flex items-center justify-center flex-shrink-0">
                     {item.icon}
                   </div>
                   <div className="min-w-0">
@@ -100,14 +102,15 @@ export function ElementsPanel() {
                     <div className="text-[10px] text-muted-foreground truncate">{item.description}</div>
                   </div>
                 </div>
-                <button
+                <TextureButton
+                  size="xs"
+                  variant="secondary"
                   onClick={() => addShapeSegment(item.shapeType, item.name)}
-                  className="px-2 py-1 text-xs font-medium rounded bg-muted hover:bg-primary hover:text-primary-foreground transition-colors flex items-center gap-1 flex-shrink-0"
                   title="Add to timeline"
                 >
                   <Plus className="w-3 h-3" /> Add
-                </button>
-              </div>
+                </TextureButton>
+              </TextureCard>
             ))}
           </div>
         </div>
@@ -119,13 +122,14 @@ export function ElementsPanel() {
           </h4>
           <div className="grid grid-cols-1 gap-2">
             {ELEMENTS.filter((e) => e.category === 'mockups').map((item) => (
-              <div
+              <TextureCard
                 key={item.id}
+                interactive
                 data-testid={`element-${item.id}`}
-                className="flex items-center justify-between p-2.5 rounded-lg border border-border bg-card/60 hover:bg-accent/40 transition-colors group"
+                className="flex items-center justify-between p-2.5"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-8 h-8 rounded-md bg-muted flex items-center justify-center flex-shrink-0">
+                  <div className="w-8 h-8 rounded-lg bg-muted/80 border border-border/60 flex items-center justify-center flex-shrink-0">
                     {item.icon}
                   </div>
                   <div className="min-w-0">
@@ -133,14 +137,15 @@ export function ElementsPanel() {
                     <div className="text-[10px] text-muted-foreground truncate">{item.description}</div>
                   </div>
                 </div>
-                <button
+                <TextureButton
+                  size="xs"
+                  variant="secondary"
                   onClick={() => addShapeSegment(item.shapeType, item.name)}
-                  className="px-2 py-1 text-xs font-medium rounded bg-muted hover:bg-primary hover:text-primary-foreground transition-colors flex items-center gap-1 flex-shrink-0"
                   title="Add to timeline"
                 >
                   <Plus className="w-3 h-3" /> Add
-                </button>
-              </div>
+                </TextureButton>
+              </TextureCard>
             ))}
           </div>
         </div>

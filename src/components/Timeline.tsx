@@ -101,11 +101,18 @@ export function Timeline({ className = '' }: { className?: string }) {
     segmentId: string | null;
   } | null>(null);
 
-  // Close context menu on global click/contextmenu outside
+  // Close context menu on global click or Escape key
   useEffect(() => {
     const handleClose = () => setContextMenu(null);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setContextMenu(null);
+    };
     window.addEventListener('click', handleClose);
-    return () => window.removeEventListener('click', handleClose);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('click', handleClose);
+      window.removeEventListener('keydown', onKeyDown);
+    };
   }, []);
 
   // ------------------------------------------------------------- geometry
@@ -456,7 +463,7 @@ export function Timeline({ className = '' }: { className?: string }) {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
     const { x, y } = canvasPoint(e.clientX, e.clientY);
-    const track = Math.max(0, Math.min(tracks.length - 1, Math.floor(y / TRACK_HEIGHT)));
+    const track = tracks.length > 0 ? Math.max(0, Math.min(tracks.length - 1, Math.floor(y / TRACK_HEIGHT))) : 0;
     setDropHint({ x: Math.max(0, x), track });
   };
   const onDrop = (e: React.DragEvent) => {
@@ -500,28 +507,28 @@ export function Timeline({ className = '' }: { className?: string }) {
   return (
     <div className={`flex flex-col h-full bg-slate-900 ${className}`} data-testid="timeline">
       {/* Ruler row */}
-      <div className="flex flex-shrink-0 border-b border-border" style={{ height: RULER_HEIGHT }}>
-        <div className="w-40 flex-shrink-0 bg-card border-r border-border flex items-center gap-1 px-1.5 overflow-x-auto">
+      <div className="flex flex-shrink-0 border-b border-border/80 dark:border-white/[0.08]" style={{ height: RULER_HEIGHT }}>
+        <div className="w-48 flex-shrink-0 bg-card border-r border-border/80 dark:border-white/[0.08] flex items-center justify-between gap-1 px-1.5">
           <button
-            className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded bg-muted hover:bg-accent font-medium"
+            className="flex-1 flex items-center justify-center gap-0.5 text-[10px] px-1 py-0.5 rounded-md bg-muted/80 hover:bg-accent font-medium whitespace-nowrap transition-colors"
             title="Add video track"
             onClick={() => addTrackOfType('video')}
           >
-            <Plus className="w-3 h-3" /> Video
+            <Plus className="w-2.5 h-2.5" /> Video
           </button>
           <button
-            className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded bg-muted hover:bg-accent font-medium"
+            className="flex-1 flex items-center justify-center gap-0.5 text-[10px] px-1 py-0.5 rounded-md bg-muted/80 hover:bg-accent font-medium whitespace-nowrap transition-colors"
             title="Add audio track"
             onClick={() => addTrackOfType('audio')}
           >
-            <Plus className="w-3 h-3" /> Audio
+            <Plus className="w-2.5 h-2.5" /> Audio
           </button>
           <button
-            className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded bg-muted hover:bg-accent font-medium"
+            className="flex-1 flex items-center justify-center gap-0.5 text-[10px] px-1 py-0.5 rounded-md bg-muted/80 hover:bg-accent font-medium whitespace-nowrap transition-colors"
             title="Add text track"
             onClick={() => addTrackOfType('text')}
           >
-            <Plus className="w-3 h-3" /> Text
+            <Plus className="w-2.5 h-2.5" /> Text
           </button>
         </div>
         <div ref={rulerWrapRef} className="flex-1 overflow-hidden cursor-pointer" onMouseDown={onRulerMouseDown}>
@@ -531,7 +538,7 @@ export function Timeline({ className = '' }: { className?: string }) {
 
       <div className="flex flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
         {/* Track headers */}
-        <div className="w-40 flex-shrink-0 bg-card border-r border-border self-start">
+        <div className="w-48 flex-shrink-0 bg-card border-r border-border/80 dark:border-white/[0.08] self-start">
           {tracks.map((track) => {
             const count = Array.from(segments.values()).filter((s) => s.trackId === track.id).length;
             return (
@@ -619,7 +626,7 @@ export function Timeline({ className = '' }: { className?: string }) {
       </div>
 
       {/* Status bar */}
-      <div className="flex items-center justify-between px-3 py-1 border-t border-border bg-card text-[10px] text-muted-foreground font-mono">
+      <div className="flex items-center justify-between gap-2 px-3 py-1 border-t border-border bg-card text-[10px] text-muted-foreground font-mono whitespace-nowrap overflow-x-auto scrollbar-hide">
         <div className="flex items-center gap-3">
           <span data-testid="timeline-timecode">{formatTimecode(playhead, showFrames)}</span>
           <div className="flex items-center gap-1 border-l border-border pl-2">
@@ -662,10 +669,10 @@ export function Timeline({ className = '' }: { className?: string }) {
       {contextMenu && (
         <div
           data-testid="timeline-context-menu"
-          className="fixed z-50 min-w-[160px] bg-popover text-popover-foreground border border-border rounded-md shadow-lg py-1 text-xs select-none"
+          className="fixed z-50 min-w-[180px] bg-card/95 dark:bg-zinc-900/95 backdrop-blur-xl text-popover-foreground border border-border/80 dark:border-white/[0.1] rounded-xl shadow-[0_12px_32px_-8px_rgba(0,0,0,0.7)] py-1.5 text-xs select-none"
           style={{
-            left: Math.min(window.innerWidth - 180, contextMenu.x),
-            top: Math.min(window.innerHeight - 180, contextMenu.y),
+            left: Math.min(window.innerWidth - 196, contextMenu.x),
+            top: Math.min(window.innerHeight - 196, contextMenu.y),
           }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -675,6 +682,7 @@ export function Timeline({ className = '' }: { className?: string }) {
                 data-testid="context-menu-split"
                 className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent hover:text-accent-foreground text-left"
                 onClick={() => {
+                  if (contextMenu.segmentId) setSelectedSegment(contextMenu.segmentId);
                   splitAtPlayhead();
                   setContextMenu(null);
                 }}
@@ -710,7 +718,7 @@ export function Timeline({ className = '' }: { className?: string }) {
               <div className="h-px bg-border my-1" />
               <button
                 data-testid="context-menu-delete"
-                className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-destructive hover:text-destructive-foreground text-destructive text-left"
+                className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-rose-600 hover:text-white text-rose-400 text-left transition-colors"
                 onClick={() => {
                   if (contextMenu.segmentId) removeSegment(contextMenu.segmentId);
                   setContextMenu(null);

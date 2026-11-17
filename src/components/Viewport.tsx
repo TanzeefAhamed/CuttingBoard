@@ -1,11 +1,24 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useStore } from '../store';
-import { Maximize2, Minimize2, Pause, Play, Settings, SkipBack, SkipForward, Volume2, VolumeX, Camera } from 'lucide-react';
+import {
+  Maximize2,
+  Minimize2,
+  Pause,
+  Play,
+  Settings,
+  SkipBack,
+  SkipForward,
+  Volume2,
+  VolumeX,
+  Camera,
+  Shield,
+} from 'lucide-react';
 import { SafeAreaOverlay } from './SafeArea';
 import type { Microseconds } from '../core/timeline/types';
-import { renderWebGLFrame, renderFrame, syncMedia } from '../editor/renderer';
+import { ASPECTS, renderWebGLFrame, renderFrame, syncMedia } from '../editor/renderer';
 import { WebGLCompositor } from '../core/webcodecs/webglCompositor';
 import type { AspectRatio } from '../store';
+import { TextureButton } from './ui/cult';
 
 interface ViewportProps {
   className?: string;
@@ -30,6 +43,7 @@ export function Viewport({ className = '' }: ViewportProps) {
   const segmentsSize = useStore((s) => s.segments.size);
   const duration = useStore((s) => s.getDuration());
   const safeArea = useStore((s) => s.safeArea);
+  const setSafeArea = useStore((s) => s.setSafeArea);
   const canvasAspectRatio = useStore((s) => s.canvasAspectRatio);
   const setCanvasAspectRatio = useStore((s) => s.setCanvasAspectRatio);
   const volume = useStore((s) => s.volume);
@@ -37,23 +51,36 @@ export function Viewport({ className = '' }: ViewportProps) {
   const openDialog = useStore((s) => s.openDialog);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
   const compositorRef = useRef<WebGLCompositor | null>(null);
   const glRef = useRef<WebGL2RenderingContext | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [showControls, setShowControls] = useState(true);
+  const [stageBounds, setStageBounds] = useState<{ width: number; height: number }>({ width: 850, height: 500 });
 
-  // Initialize WebGL 2 Compositor
+  // Compute exact aspect-ratio stage box dimensions fitting cleanly inside stageRef
+  const ratio = ASPECTS[canvasAspectRatio] ?? 16 / 9;
+  const availW = Math.max(120, stageBounds.width - 24);
+  const availH = Math.max(120, stageBounds.height - 24);
+  let frameW = availW;
+  let frameH = frameW / ratio;
+  if (frameH > availH) {
+    frameH = availH;
+    frameW = frameH * ratio;
+  }
+  const roundedFrameW = Math.max(1, Math.round(frameW));
+  const roundedFrameH = Math.max(1, Math.round(frameH));
+
+  // Initialize WebGL 2 Compositor (preserveDrawingBuffer: true ensures stable frames & PNG snapshots)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     try {
       const gl = canvas.getContext('webgl2', {
         alpha: false,
-        desynchronized: true,
         antialias: true,
-        preserveDrawingBuffer: false,
+        preserveDrawingBuffer: true,
       });
       if (gl) {
         glRef.current = gl;
@@ -69,22 +96,30 @@ export function Viewport({ className = '' }: ViewportProps) {
     };
   }, []);
 
-  // DPR-aware canvas sizing
+  // Measure outer stage container
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const wrapper = wrapperRef.current;
-    if (!canvas || !wrapper) return;
-    const resize = () => {
-      const rect = wrapper.getBoundingClientRect();
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = Math.max(1, Math.round(rect.width * dpr));
-      canvas.height = Math.max(1, Math.round(rect.height * dpr));
+    const stage = stageRef.current;
+    if (!stage) return;
+    const measure = () => {
+      const rect = stage.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        setStageBounds({ width: rect.width, height: rect.height });
+      }
     };
-    resize();
-    const observer = new ResizeObserver(resize);
-    observer.observe(wrapper);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(stage);
     return () => observer.disconnect();
   }, []);
+
+  // DPR-aware canvas backing store locked to framed aspect box
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.max(1, Math.round(roundedFrameW * dpr));
+    canvas.height = Math.max(1, Math.round(roundedFrameH * dpr));
+  }, [roundedFrameW, roundedFrameH]);
 
   // Render loop: sync media elements to the playhead, then composite via WebGL 2 & WebCodecs
   useEffect(() => {
@@ -112,7 +147,7 @@ export function Viewport({ className = '' }: ViewportProps) {
             tracks: st.tracks,
             t: st.playhead,
             aspect: st.canvasAspectRatio,
-            letterboxFill: '#000',
+            letterboxFill: '#09090b',
           });
         } catch (err) {
           console.warn('renderWebGLFrame error', err);
@@ -120,7 +155,6 @@ export function Viewport({ className = '' }: ViewportProps) {
           isRendering = false;
         }
       } else if (!compositor) {
-        // Fallback to 2D context if WebGL2 not available
         const ctx = canvas.getContext('2d');
         if (ctx) {
           renderFrame(ctx, canvas.width, canvas.height, {
@@ -128,7 +162,7 @@ export function Viewport({ className = '' }: ViewportProps) {
             tracks: st.tracks,
             t: st.playhead,
             aspect: st.canvasAspectRatio,
-            letterboxFill: '#000',
+            letterboxFill: '#09090b',
           });
         }
       }
@@ -191,91 +225,146 @@ export function Viewport({ className = '' }: ViewportProps) {
   };
 
   const frac = duration > 0n ? Math.min(1, Number(playhead) / Number(duration)) : 0;
+  const anySafeArea = safeArea.actionSafe || safeArea.titleSafe || safeArea.tiktokSafe;
 
   return (
     <div
       ref={wrapperRef}
       data-testid="viewport"
-      className={`relative w-full h-full bg-black overflow-hidden ${className}`}
-      onMouseEnter={() => setShowControls(true)}
-      onMouseLeave={() => setShowControls(false)}
+      className={`flex flex-col w-full h-full bg-zinc-950 overflow-hidden ${className}`}
     >
-      <canvas ref={canvasRef} data-testid="viewport-canvas" className="w-full h-full block" />
+      {/* Top Composition Stage Region */}
+      <div
+        ref={stageRef}
+        className="flex-1 min-h-0 relative flex items-center justify-center bg-zinc-950 overflow-hidden p-3"
+        style={{
+          backgroundImage: 'radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px)',
+          backgroundSize: '20px 20px',
+        }}
+      >
+        <div
+          style={{ width: roundedFrameW, height: roundedFrameH }}
+          className="relative rounded-lg overflow-hidden shadow-[0_12px_40px_rgba(0,0,0,0.85)] ring-1 ring-white/15 bg-black transition-[width,height] duration-150 flex-shrink-0"
+        >
+          <canvas ref={canvasRef} data-testid="viewport-canvas" className="w-full h-full block" />
 
-      {segmentsSize === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-slate-400 text-sm select-none">
-          Add media to the timeline to preview
-        </div>
-      )}
-
-      <div className="absolute inset-0 pointer-events-none">
-        <SafeAreaOverlay
-          aspectRatio={canvasAspectRatio}
-          showActionSafe={safeArea.actionSafe}
-          showTitleSafe={safeArea.titleSafe}
-          showTikTokSafe={safeArea.tiktokSafe}
-        />
-      </div>
-
-      {showControls && (
-        <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/80 to-transparent">
-          <div className="mb-2 py-1.5 cursor-pointer" onMouseDown={onBarDown} ref={barRef} data-testid="viewport-scrubber">
-            <div className="relative h-1.5 bg-white/20 rounded-full">
-              <div className="absolute inset-y-0 left-0 bg-red-500/70 rounded-full" style={{ width: `${frac * 100}%` }} />
-              <div
-                className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 bg-red-500 rounded-full shadow"
-                style={{ left: `${frac * 100}%` }}
+          {anySafeArea && (
+            <div className="absolute inset-0 pointer-events-none">
+              <SafeAreaOverlay
+                aspectRatio={canvasAspectRatio}
+                showActionSafe={safeArea.actionSafe}
+                showTitleSafe={safeArea.titleSafe}
+                showTikTokSafe={safeArea.tiktokSafe}
               />
             </div>
+          )}
+        </div>
+
+        {segmentsSize === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none p-4">
+            <div className="px-4 py-2.5 rounded-xl border border-white/[0.08] bg-zinc-900/80 backdrop-blur-md text-xs text-slate-300 shadow-lg">
+              Add media from the left panel or timeline to preview
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Dedicated Docked Cult UI Transport & Utility Bar (never collides with canvas) */}
+      <div className="flex-shrink-0 px-3 py-2 bg-card/95 dark:bg-zinc-900/95 border-t border-border/80 dark:border-white/[0.08] backdrop-blur-md space-y-1.5 select-none">
+        {/* Scrubber */}
+        <div
+          className="py-1 cursor-pointer group"
+          onMouseDown={onBarDown}
+          ref={barRef}
+          data-testid="viewport-scrubber"
+        >
+          <div className="relative h-1.5 bg-muted dark:bg-white/15 rounded-full overflow-visible">
+            <div
+              className="absolute inset-y-0 left-0 bg-primary rounded-full"
+              style={{ width: `${frac * 100}%` }}
+            />
+            <div
+              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 bg-white border-2 border-primary rounded-full shadow transition-transform group-hover:scale-125"
+              style={{ left: `${frac * 100}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Transport & Controls Row */}
+        <div className="flex items-center justify-between gap-2 whitespace-nowrap overflow-x-auto scrollbar-hide">
+          <div className="flex items-center gap-1">
+            <TextureButton
+              variant="ghost"
+              size="icon"
+              title="Back 1s (J)"
+              onClick={() => setPlayhead((playhead - 1_000_000n) as Microseconds)}
+            >
+              <SkipBack className="w-3.5 h-3.5" />
+            </TextureButton>
+            <TextureButton
+              variant={isPlaying ? 'primary' : 'secondary'}
+              size="icon"
+              title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
+              aria-label={isPlaying ? 'Pause' : 'Play'}
+              onClick={() => setIsPlaying(!isPlaying)}
+              disabled={segmentsSize === 0}
+            >
+              {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+            </TextureButton>
+            <TextureButton
+              variant="ghost"
+              size="icon"
+              title="Forward 1s (L)"
+              onClick={() => setPlayhead((playhead + 1_000_000n) as Microseconds)}
+            >
+              <SkipForward className="w-3.5 h-3.5" />
+            </TextureButton>
           </div>
 
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1">
-              <button
-                className="p-1.5 text-white/80 hover:text-white transition-colors"
-                title="Back 1s (J)"
-                onClick={() => setPlayhead((playhead - 1_000_000n) as Microseconds)}
-              >
-                <SkipBack className="w-4 h-4" />
-              </button>
-              <button
-                className="p-1.5 text-white hover:text-white transition-colors"
-                title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
-                aria-label={isPlaying ? 'Pause' : 'Play'}
-                onClick={() => setIsPlaying(!isPlaying)}
-                disabled={segmentsSize === 0}
-              >
-                {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-              </button>
-              <button
-                className="p-1.5 text-white/80 hover:text-white transition-colors"
-                title="Forward 1s (L)"
-                onClick={() => setPlayhead((playhead + 1_000_000n) as Microseconds)}
-              >
-                <SkipForward className="w-4 h-4" />
-              </button>
-            </div>
+          <div
+            className="px-2.5 py-0.5 rounded-md bg-muted/60 dark:bg-zinc-950/80 border border-border/60 dark:border-white/[0.06] text-foreground font-mono text-[11px]"
+            data-testid="viewport-timecode"
+          >
+            {formatTimecode(playhead)} <span className="text-muted-foreground">/ {formatTimecode(duration)}</span>
+          </div>
 
-            <div className="text-white/80 font-mono text-xs" data-testid="viewport-timecode">
-              {formatTimecode(playhead)} / {formatTimecode(duration)}
-            </div>
+          <div className="flex items-center gap-1.5">
+            <select
+              value={canvasAspectRatio}
+              onChange={(e) => setCanvasAspectRatio(e.target.value as AspectRatio)}
+              className="text-[11px] bg-muted/60 dark:bg-zinc-950 text-foreground border border-border/80 dark:border-white/[0.08] rounded-md px-1.5 py-0.5 cursor-pointer"
+              title="Canvas aspect ratio"
+            >
+              {['16:9', '9:16', '1:1', '4:3', '21:9'].map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
 
-            <div className="flex items-center gap-1">
-              <select
-                value={canvasAspectRatio}
-                onChange={(e) => setCanvasAspectRatio(e.target.value as AspectRatio)}
-                className="text-[10px] bg-black/50 text-white border border-white/20 rounded px-1 py-0.5"
-                title="Canvas aspect ratio"
+            <TextureButton
+              variant={anySafeArea ? 'active' : 'ghost'}
+              size="icon"
+              title={anySafeArea ? 'Hide Safe Area Guides' : 'Show Safe Area Guides'}
+              onClick={() =>
+                setSafeArea({
+                  actionSafe: !anySafeArea,
+                  titleSafe: !anySafeArea,
+                })
+              }
+            >
+              <Shield className="w-3.5 h-3.5" />
+            </TextureButton>
+
+            <div className="hidden sm:flex items-center gap-1 pl-1 border-l border-border/60">
+              <TextureButton
+                variant="ghost"
+                size="icon"
+                onClick={() => setVolume(volume === 0 ? 1 : 0)}
+                title="Mute"
               >
-                {['16:9', '9:16', '1:1', '4:3', '21:9'].map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
-              <button className="p-1 text-white/70 hover:text-white" onClick={() => setVolume(volume === 0 ? 1 : 0)} title="Mute">
-                {volume === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-              </button>
+                {volume === 0 ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+              </TextureButton>
               <input
                 type="range"
                 min={0}
@@ -283,27 +372,39 @@ export function Viewport({ className = '' }: ViewportProps) {
                 step={0.05}
                 value={volume}
                 onChange={(e) => setVolume(Number(e.target.value))}
-                className="w-20 h-1 accent-primary"
+                className="w-16 h-1 accent-primary cursor-pointer"
                 title="Volume"
               />
-              <button
-                className="p-1.5 text-white/70 hover:text-white transition-colors"
-                title="Capture frame snapshot (PNG)"
-                onClick={takeSnapshot}
-                data-testid="viewport-snapshot-btn"
-              >
-                <Camera className="w-4 h-4" />
-              </button>
-              <button className="p-1.5 text-white/70 hover:text-white transition-colors" title="Toggle fullscreen" onClick={toggleFullscreen}>
-                {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-              </button>
-              <button className="p-1.5 text-white/70 hover:text-white transition-colors" title="Settings" onClick={() => openDialog('settings')}>
-                <Settings className="w-4 h-4" />
-              </button>
             </div>
+
+            <TextureButton
+              variant="ghost"
+              size="icon"
+              title="Capture frame snapshot (PNG)"
+              onClick={takeSnapshot}
+              data-testid="viewport-snapshot-btn"
+            >
+              <Camera className="w-3.5 h-3.5" />
+            </TextureButton>
+            <TextureButton
+              variant="ghost"
+              size="icon"
+              title="Toggle fullscreen"
+              onClick={toggleFullscreen}
+            >
+              {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+            </TextureButton>
+            <TextureButton
+              variant="ghost"
+              size="icon"
+              title="Settings"
+              onClick={() => openDialog('settings')}
+            >
+              <Settings className="w-3.5 h-3.5" />
+            </TextureButton>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

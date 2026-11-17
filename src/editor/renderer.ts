@@ -115,6 +115,136 @@ function hasOtherActive(segments: Iterable<Segment>, self: Segment, t: bigint): 
   return false;
 }
 
+const overlayCanvasCache = new Map<string, { key: string; canvas: HTMLCanvasElement }>();
+
+/**
+ * Rasterize text or shape overlays into a cached 1920x1080 transparent canvas.
+ */
+export function rasterizeOverlayCanvas(s: Segment): HTMLCanvasElement | null {
+  if (s.media.type === 'text') {
+    const text = (s.media.metadata?.text as string) || 'Sample Text';
+    const fontSize = (s.media.metadata?.fontSize as number) || 44;
+    const color = (s.media.metadata?.color as string) || '#ffffff';
+    const fontFamily = (s.media.metadata?.fontFamily as string) || 'Inter';
+    const key = `text:${text}|${fontSize}|${color}|${fontFamily}`;
+    const hit = overlayCanvasCache.get(s.id);
+    if (hit && hit.key === key) return hit.canvas;
+
+    const canvas = hit?.canvas ?? document.createElement('canvas');
+    canvas.width = 1920;
+    canvas.height = 1080;
+    const tCtx = canvas.getContext('2d')!;
+    tCtx.clearRect(0, 0, 1920, 1080);
+    tCtx.font = `bold ${fontSize * 1.8}px "${fontFamily}", sans-serif`;
+    tCtx.textAlign = 'center';
+    tCtx.textBaseline = 'middle';
+    tCtx.lineWidth = Math.max(4, Math.round(fontSize * 0.14));
+    tCtx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+    tCtx.fillStyle = color;
+
+    // Word-wrap long captions cleanly within 1600px composition safe width
+    const words = text.split(/\s+/);
+    const lines: string[] = [];
+    let currentLine = words[0] ?? '';
+    for (let i = 1; i < words.length; i++) {
+      const candidate = `${currentLine} ${words[i]}`;
+      if (tCtx.measureText(candidate).width > 1600 && currentLine.length > 0) {
+        lines.push(currentLine);
+        currentLine = words[i]!;
+      } else {
+        currentLine = candidate;
+      }
+    }
+    if (currentLine) lines.push(currentLine);
+
+    const lineHeight = fontSize * 2.1;
+    const startY = 540 - ((lines.length - 1) * lineHeight) / 2;
+    for (let i = 0; i < lines.length; i++) {
+      const y = startY + i * lineHeight;
+      tCtx.strokeText(lines[i]!, 960, y);
+      tCtx.fillText(lines[i]!, 960, y);
+    }
+
+    if (overlayCanvasCache.size > 100) overlayCanvasCache.clear();
+    overlayCanvasCache.set(s.id, { key, canvas });
+    return canvas;
+  }
+
+  if ((s.media.type as string) === 'shape') {
+    const shapeType = (s.media.metadata?.shapeType as string) || 'rectangle';
+    const color = (s.media.metadata?.color as string) || '#3b82f6';
+    const strokeColor = (s.media.metadata?.strokeColor as string) || '#ffffff';
+    const key = `shape:${shapeType}|${color}|${strokeColor}`;
+    const hit = overlayCanvasCache.get(s.id);
+    if (hit && hit.key === key) return hit.canvas;
+
+    const canvas = hit?.canvas ?? document.createElement('canvas');
+    canvas.width = 1920;
+    canvas.height = 1080;
+    const sCtx = canvas.getContext('2d')!;
+    sCtx.clearRect(0, 0, 1920, 1080);
+    sCtx.fillStyle = color;
+    sCtx.strokeStyle = strokeColor;
+    sCtx.lineWidth = 8;
+
+    if (shapeType === 'circle') {
+      sCtx.beginPath();
+      sCtx.arc(960, 540, 240, 0, Math.PI * 2);
+      sCtx.fill();
+      sCtx.stroke();
+    } else if (shapeType === 'arrow') {
+      sCtx.beginPath();
+      sCtx.moveTo(760, 480);
+      sCtx.lineTo(1060, 480);
+      sCtx.lineTo(1060, 400);
+      sCtx.lineTo(1200, 540);
+      sCtx.lineTo(1060, 680);
+      sCtx.lineTo(1060, 600);
+      sCtx.lineTo(760, 600);
+      sCtx.closePath();
+      sCtx.fill();
+      sCtx.stroke();
+    } else if (shapeType === 'device-macbook') {
+      sCtx.fillStyle = color || '#1e293b';
+      sCtx.beginPath();
+      sCtx.roundRect(560, 280, 800, 500, 16);
+      sCtx.fill();
+      sCtx.strokeStyle = strokeColor || '#64748b';
+      sCtx.stroke();
+      sCtx.fillStyle = '#0f172a';
+      sCtx.fillRect(590, 310, 740, 440);
+      sCtx.fillStyle = '#334155';
+      sCtx.beginPath();
+      sCtx.roundRect(500, 780, 920, 24, [0, 0, 12, 12]);
+      sCtx.fill();
+      sCtx.fillStyle = '#64748b';
+      sCtx.fillRect(920, 780, 80, 6);
+    } else if (shapeType === 'device-iphone') {
+      sCtx.fillStyle = color || '#0f172a';
+      sCtx.beginPath();
+      sCtx.roundRect(800, 200, 320, 680, 44);
+      sCtx.fill();
+      sCtx.strokeStyle = strokeColor || '#475569';
+      sCtx.stroke();
+      sCtx.fillStyle = '#000';
+      sCtx.beginPath();
+      sCtx.roundRect(915, 220, 90, 26, 13);
+      sCtx.fill();
+    } else {
+      sCtx.beginPath();
+      sCtx.roundRect(660, 360, 600, 360, 24);
+      sCtx.fill();
+      sCtx.stroke();
+    }
+
+    if (overlayCanvasCache.size > 100) overlayCanvasCache.clear();
+    overlayCanvasCache.set(s.id, { key, canvas });
+    return canvas;
+  }
+
+  return null;
+}
+
 /**
  * Composite the timeline at time `t` into a canvas context of size cw x ch.
  * The composition frame (aspect) is letterboxed inside the canvas.
@@ -164,10 +294,21 @@ export function renderFrame(
     .sort((a, b) => (order.get(b.trackId) ?? 0) - (order.get(a.trackId) ?? 0));
 
   for (const s of active) {
-    const el = getMedia(s.media.url, s.media.type);
-    if (!isDrawable(el)) continue;
-    const sw = el instanceof HTMLVideoElement ? el.videoWidth : el.naturalWidth;
-    const sh = el instanceof HTMLVideoElement ? el.videoHeight : el.naturalHeight;
+    let drawable: CanvasImageSource | null = null;
+    let sw = 1920;
+    let sh = 1080;
+
+    if (s.media.type === 'text' || (s.media.type as string) === 'shape') {
+      drawable = rasterizeOverlayCanvas(s);
+    } else {
+      const el = getMedia(s.media.url, s.media.type as any);
+      if (isDrawable(el)) {
+        drawable = el;
+        sw = el instanceof HTMLVideoElement ? el.videoWidth : el.naturalWidth;
+        sh = el instanceof HTMLVideoElement ? el.videoHeight : el.naturalHeight;
+      }
+    }
+    if (!drawable) continue;
 
     const crop = { ...DEFAULT_CROP, ...s.crop };
     const cx0 = (crop.left / 100) * sw;
@@ -188,7 +329,7 @@ export function renderFrame(
     ctx.globalAlpha = Math.max(0, Math.min(1, tr.opacity));
     ctx.globalCompositeOperation = BLEND[tr.blendMode] ?? 'source-over';
     ctx.filter = filterString(s.filters);
-    ctx.drawImage(el, cx0, cy0, cwid, chei, -dw * tr.anchor.x, -dh * tr.anchor.y, dw, dh);
+    ctx.drawImage(drawable, cx0, cy0, cwid, chei, -dw * tr.anchor.x, -dh * tr.anchor.y, dw, dh);
     ctx.restore();
   }
   ctx.restore();
@@ -222,30 +363,18 @@ export async function renderWebGLFrame(
   const ox = Math.round((cw - fw) / 2);
   const oy = Math.round((ch - fh) / 2);
 
-  // Clear full canvas in black (letterbox)
-  gl.viewport(0, 0, cw, ch);
-  gl.scissor(0, 0, cw, ch);
-  gl.enable(gl.SCISSOR_TEST);
-  gl.clearColor(0, 0, 0, 1);
-  gl.clear(gl.COLOR_BUFFER_BIT);
-
-  // Clear composition area with dark background
-  gl.scissor(ox, oy, fw, fh);
-  gl.clearColor(0.043, 0.059, 0.098, 1);
-  gl.clear(gl.COLOR_BUFFER_BIT);
-  gl.disable(gl.SCISSOR_TEST);
-
-  // Viewport to composition box
-  gl.viewport(ox, oy, fw, fh);
-
   const order = new Map(opts.tracks.map((tr, i) => [tr.id, i]));
   const trackMap = new Map(opts.tracks.map((tr) => [tr.id, tr]));
   const active = Array.from(opts.segments)
     .filter((s) => s.media.type !== 'audio' && isActive(s, opts.t) && trackMap.get(s.trackId)?.visible !== false)
     .sort((a, b) => (order.get(b.trackId) ?? 0) - (order.get(a.trackId) ?? 0));
 
+  // Resolve all async video frame decodes BEFORE clearing or issuing GL commands
+  // so the WebGL drawing buffer never flashes black during async awaits.
+  const prepared: Array<{ segment: Segment; source: LayerRenderParams['source']; sw: number; sh: number; frameToClose: VideoFrame | null }> = [];
+
   for (const s of active) {
-    let sourceDrawable: VideoFrame | HTMLVideoElement | HTMLImageElement | null = null;
+    let sourceDrawable: LayerRenderParams['source'] | null = null;
     let sw = 1920;
     let sh = 1080;
     let videoFrameToClose: VideoFrame | null = null;
@@ -262,6 +391,13 @@ export async function renderWebGLFrame(
         sourceDrawable = decoded.fallbackElement;
         sw = decoded.fallbackElement.videoWidth || 1920;
         sh = decoded.fallbackElement.videoHeight || 1080;
+      } else {
+        const pooled = getMedia(s.media.url, 'video');
+        if (isDrawable(pooled)) {
+          sourceDrawable = pooled;
+          sw = (pooled as HTMLVideoElement).videoWidth || 1920;
+          sh = (pooled as HTMLVideoElement).videoHeight || 1080;
+        }
       }
     } else if (s.media.type === 'image') {
       const el = getMedia(s.media.url, 'image');
@@ -270,148 +406,93 @@ export async function renderWebGLFrame(
         sw = (el as HTMLImageElement).naturalWidth || 1920;
         sh = (el as HTMLImageElement).naturalHeight || 1080;
       }
-    } else if (s.media.type === 'text') {
-      const text = (s.media.metadata?.text as string) || 'Sample Text';
-      const fontSize = (s.media.metadata?.fontSize as number) || 44;
-      const color = (s.media.metadata?.color as string) || '#ffffff';
-      const textCanvas = document.createElement('canvas');
-      textCanvas.width = 1920;
-      textCanvas.height = 1080;
-      const tCtx = textCanvas.getContext('2d')!;
-      tCtx.clearRect(0, 0, 1920, 1080);
-      tCtx.font = `bold ${fontSize * 1.8}px "Inter", sans-serif`;
-      tCtx.textAlign = 'center';
-      tCtx.textBaseline = 'middle';
-      tCtx.lineWidth = 6;
-      tCtx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
-      tCtx.strokeText(text, 960, 540);
-      tCtx.fillStyle = color;
-      tCtx.fillText(text, 960, 540);
-      sourceDrawable = textCanvas;
-      sw = 1920;
-      sh = 1080;
-    } else if (s.media.type === 'shape') {
-      const shapeType = (s.media.metadata?.shapeType as string) || 'rectangle';
-      const color = (s.media.metadata?.color as string) || '#3b82f6';
-      const strokeColor = (s.media.metadata?.strokeColor as string) || '#ffffff';
-      const shapeCanvas = document.createElement('canvas');
-      shapeCanvas.width = 1920;
-      shapeCanvas.height = 1080;
-      const sCtx = shapeCanvas.getContext('2d')!;
-      sCtx.clearRect(0, 0, 1920, 1080);
-      sCtx.fillStyle = color;
-      sCtx.strokeStyle = strokeColor;
-      sCtx.lineWidth = 8;
-
-      if (shapeType === 'circle') {
-        sCtx.beginPath();
-        sCtx.arc(960, 540, 240, 0, Math.PI * 2);
-        sCtx.fill();
-        sCtx.stroke();
-      } else if (shapeType === 'arrow') {
-        sCtx.beginPath();
-        sCtx.moveTo(760, 480);
-        sCtx.lineTo(1060, 480);
-        sCtx.lineTo(1060, 400);
-        sCtx.lineTo(1200, 540);
-        sCtx.lineTo(1060, 680);
-        sCtx.lineTo(1060, 600);
-        sCtx.lineTo(760, 600);
-        sCtx.closePath();
-        sCtx.fill();
-        sCtx.stroke();
-      } else if (shapeType === 'device-macbook') {
-        sCtx.fillStyle = '#1e293b';
-        sCtx.beginPath();
-        sCtx.roundRect(560, 280, 800, 500, 16);
-        sCtx.fill();
-        sCtx.strokeStyle = '#64748b';
-        sCtx.stroke();
-        sCtx.fillStyle = '#0f172a';
-        sCtx.fillRect(590, 310, 740, 440);
-        sCtx.fillStyle = '#334155';
-        sCtx.beginPath();
-        sCtx.roundRect(500, 780, 920, 24, [0, 0, 12, 12]);
-        sCtx.fill();
-        sCtx.fillStyle = '#64748b';
-        sCtx.fillRect(920, 780, 80, 6);
-      } else if (shapeType === 'device-iphone') {
-        sCtx.fillStyle = '#0f172a';
-        sCtx.beginPath();
-        sCtx.roundRect(800, 200, 320, 680, 44);
-        sCtx.fill();
-        sCtx.strokeStyle = '#475569';
-        sCtx.stroke();
-        sCtx.fillStyle = '#000';
-        sCtx.beginPath();
-        sCtx.roundRect(915, 220, 90, 26, 13);
-        sCtx.fill();
-      } else {
-        sCtx.beginPath();
-        sCtx.roundRect(660, 360, 600, 360, 24);
-        sCtx.fill();
-        sCtx.stroke();
-      }
-      sourceDrawable = shapeCanvas;
+    } else if (s.media.type === 'text' || (s.media.type as string) === 'shape') {
+      sourceDrawable = rasterizeOverlayCanvas(s);
       sw = 1920;
       sh = 1080;
     }
 
-    if (!sourceDrawable) continue;
+    if (sourceDrawable) {
+      prepared.push({ segment: s, source: sourceDrawable, sw, sh, frameToClose: videoFrameToClose });
+    }
+  }
 
-    const crop = { ...DEFAULT_CROP, ...s.crop };
-    const filters = { ...DEFAULT_FILTERS, ...s.filters };
+  // Atomic synchronous WebGL clear + multi-layer composite
+  try {
+    gl.viewport(0, 0, cw, ch);
+    gl.scissor(0, 0, cw, ch);
+    gl.enable(gl.SCISSOR_TEST);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
 
-    // Contain-fit source inside comp
-    const fit = Math.min(comp.w / sw, comp.h / sh);
-    const dw = sw * fit;
-    const dh = sh * fit;
+    gl.scissor(ox, oy, fw, fh);
+    gl.clearColor(0.043, 0.059, 0.098, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.disable(gl.SCISSOR_TEST);
 
-    const sx = (dw / comp.w) * s.transform.scale.x;
-    const sy = (dh / comp.h) * s.transform.scale.y;
+    gl.viewport(ox, oy, fw, fh);
 
-    const layerParams: LayerRenderParams = {
-      source: sourceDrawable,
-      width: sw,
-      height: sh,
-      transform: {
-        position: { x: s.transform.position.x, y: s.transform.position.y },
-        scale: { x: sx, y: sy },
-        rotation: s.transform.rotation,
-        anchor: s.transform.anchor,
-        opacity: s.transform.opacity,
-        blendMode: (s.transform.blendMode as BlendMode) || 'normal',
-      },
-      crop,
-      colorGrade: s.colorGrade,
-      adjustments: {
-        brightness: filters.brightness,
-        contrast: filters.contrast,
-        saturation: filters.saturation,
-        hue: filters.hue,
-        blur: filters.blur,
-        temperature: s.colorGrade?.temperature ?? 0,
-        tint: s.colorGrade?.tint ?? 0,
-      },
-      mask: s.aiEffects?.portraitMatting
-        ? {
-            type: 'radial',
-            feather: 0.25,
-            invert: false,
-            center: { x: 0.5, y: 0.5 },
-            size: { x: 0.4, y: 0.6 },
-          }
-        : undefined,
-      filterEffect: filters.effect !== 'none' ? (filters.effect as any) : undefined,
-    };
+    for (const item of prepared) {
+      const { segment: s, source, sw, sh } = item;
+      const crop = { ...DEFAULT_CROP, ...s.crop };
+      const filters = { ...DEFAULT_FILTERS, ...s.filters };
 
-    try {
-      compositor.renderLayer(layerParams, comp.w, comp.h);
-    } catch (e) {
-      console.warn('renderLayer error', e);
-    } finally {
-      if (videoFrameToClose) {
-        videoFrameToClose.close();
+      const fit = Math.min(comp.w / sw, comp.h / sh);
+      const dw = sw * fit;
+      const dh = sh * fit;
+
+      const sx = (dw / comp.w) * s.transform.scale.x;
+      const sy = (dh / comp.h) * s.transform.scale.y;
+
+      const layerParams: LayerRenderParams = {
+        source,
+        width: sw,
+        height: sh,
+        transform: {
+          position: { x: s.transform.position.x, y: s.transform.position.y },
+          scale: { x: sx, y: sy },
+          rotation: s.transform.rotation,
+          anchor: s.transform.anchor,
+          opacity: s.transform.opacity,
+          blendMode: (s.transform.blendMode as BlendMode) || 'normal',
+        },
+        crop,
+        colorGrade: s.colorGrade,
+        adjustments: {
+          brightness: filters.brightness,
+          contrast: filters.contrast,
+          saturation: filters.saturation,
+          hue: filters.hue,
+          blur: filters.blur,
+          temperature: s.colorGrade?.temperature ?? 0,
+          tint: s.colorGrade?.tint ?? 0,
+        },
+        mask: s.aiEffects?.portraitMatting
+          ? {
+              type: 'radial',
+              feather: 0.25,
+              invert: false,
+              center: { x: 0.5, y: 0.5 },
+              size: { x: 0.4, y: 0.6 },
+            }
+          : undefined,
+        filterEffect: filters.effect !== 'none' ? (filters.effect as any) : undefined,
+      };
+
+      try {
+        compositor.renderLayer(layerParams, comp.w, comp.h);
+      } catch (e) {
+        console.warn('renderLayer error', e);
+      }
+    }
+  } finally {
+    for (const item of prepared) {
+      if (item.frameToClose) {
+        try {
+          item.frameToClose.close();
+        } catch {
+          /* already closed */
+        }
       }
     }
   }

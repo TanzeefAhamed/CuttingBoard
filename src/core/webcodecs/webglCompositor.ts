@@ -227,18 +227,16 @@ void main() {
   vec3 col = srcColor.rgb;
   float alpha = srcColor.a * u_opacity;
 
-  // 1. Lift / Gamma / Gain
+  // 1. Lift / Gamma / Gain (1.0 = neutral identity across RGB & master)
   if (u_lgg_enabled == 1) {
-    vec3 lift = (vec3(u_lift_r, u_lift_g, u_lift_b) + vec3(u_lift_master)) * 0.5;
-    col = mix(col, col + lift, 1.0 - col);
+    vec3 lift = (vec3(u_lift_r, u_lift_g, u_lift_b) * u_lift_master) - vec3(1.0);
+    col = clamp(col + lift * (1.0 - col), 0.0, 1.0);
 
-    vec3 gamma = (vec3(u_gamma_r, u_gamma_g, u_gamma_b) + vec3(u_gamma_master));
-    gamma = max(gamma, vec3(0.05));
+    vec3 gamma = max(vec3(0.05), vec3(u_gamma_r, u_gamma_g, u_gamma_b) * u_gamma_master);
     col = pow(max(col, vec3(0.0)), vec3(1.0) / gamma);
 
-    vec3 gain = (vec3(u_gain_r, u_gain_g, u_gain_b) + vec3(u_gain_master));
-    col = col * gain;
-    col = clamp(col, 0.0, 1.0);
+    vec3 gain = vec3(u_gain_r, u_gain_g, u_gain_b) * u_gain_master;
+    col = clamp(col * gain, 0.0, 1.0);
   }
 
   // 2. 8-Channel HSL
@@ -338,14 +336,13 @@ void main() {
 
   col = clamp(col, 0.0, 1.0);
 
-  // 8. Blend with backdrop
+  // 8. Blend with backdrop (output premultiplied for ONE / ONE_MINUS_SRC_ALPHA)
   if (u_has_backdrop == 1) {
     vec4 dstColor = texture(u_backdrop, uv);
     vec3 blended = ${blendCalc};
-    // Standard porter-duff over
     fragColor = vec4(blended * alpha + dstColor.rgb * (1.0 - alpha), dstColor.a + alpha * (1.0 - dstColor.a));
   } else {
-    fragColor = vec4(col, alpha);
+    fragColor = vec4(col * alpha, alpha);
   }
 }
 `;
@@ -358,6 +355,7 @@ export class WebGLCompositor {
   private curveTextures: { master: WebGLTexture; r: WebGLTexture; g: WebGLTexture; b: WebGLTexture } | null = null;
   private lut3DTexture: WebGLTexture | null = null;
   private defaultWhiteTexture: WebGLTexture;
+  private default3DTexture: WebGLTexture | null = null;
   private fboA: WebGLFramebuffer | null = null;
   private fboB: WebGLFramebuffer | null = null;
   private fboTexA: WebGLTexture | null = null;
@@ -400,7 +398,22 @@ export class WebGLCompositor {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     this.defaultWhiteTexture = tex;
 
+    this.initDefault3DTexture();
     this.initDefaultCurveTextures();
+  }
+
+  private initDefault3DTexture() {
+    const gl = this.gl;
+    if (typeof gl.texImage3D !== 'function' || !gl.TEXTURE_3D) return;
+    const t = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_3D, t);
+    gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGBA, 1, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255, 255, 255, 255]));
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    this.default3DTexture = t;
   }
 
   private initDefaultCurveTextures() {
@@ -585,15 +598,23 @@ export class WebGLCompositor {
       gl.uniform1i(gl.getUniformLocation(prog, 'u_curves_enabled'), cg?.curves ? 1 : 0);
     }
 
-    // 3D LUT
-    if (this.lut3DTexture && cg?.lut3D) {
+    // 3D LUT — always bind unit 5 to a valid 3D texture so sampler3D never collides with sampler2D on unit 0
+    const lutTex = (this.lut3DTexture && ((cg as any)?.lut3D || cg?.lut3d)) ? this.lut3DTexture : this.default3DTexture;
+    if (lutTex && gl.TEXTURE5 && gl.TEXTURE_3D) {
       gl.activeTexture(gl.TEXTURE5);
-      gl.bindTexture(gl.TEXTURE_3D, this.lut3DTexture);
+      gl.bindTexture(gl.TEXTURE_3D, lutTex);
       gl.uniform1i(gl.getUniformLocation(prog, 'u_lut3d'), 5);
-      gl.uniform1i(gl.getUniformLocation(prog, 'u_lut3d_enabled'), 1);
-    } else {
-      gl.uniform1i(gl.getUniformLocation(prog, 'u_lut3d_enabled'), 0);
     }
+    gl.uniform1i(gl.getUniformLocation(prog, 'u_lut3d_enabled'), (this.lut3DTexture && ((cg as any)?.lut3D || cg?.lut3d)) ? 1 : 0);
+
+    // Backdrop — bind unit 6 to default white texture and disable backdrop sampling
+    if (gl.TEXTURE6) {
+      gl.activeTexture(gl.TEXTURE6);
+      gl.bindTexture(gl.TEXTURE_2D, this.defaultWhiteTexture);
+      gl.uniform1i(gl.getUniformLocation(prog, 'u_backdrop'), 6);
+    }
+    gl.uniform1i(gl.getUniformLocation(prog, 'u_has_backdrop'), 0);
+    gl.activeTexture(gl.TEXTURE0);
 
     // Basic adjustments
     const adj = params.adjustments || { brightness: 100, contrast: 100, saturation: 100, hue: 0, blur: 0 };
@@ -638,6 +659,7 @@ export class WebGLCompositor {
     const gl = this.gl;
     gl.deleteVertexArray(this.quadVao);
     gl.deleteTexture(this.defaultWhiteTexture);
+    if (this.default3DTexture) gl.deleteTexture(this.default3DTexture);
     if (this.curveTextures) {
       gl.deleteTexture(this.curveTextures.master);
       gl.deleteTexture(this.curveTextures.r);
